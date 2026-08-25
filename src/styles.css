@@ -1,0 +1,146 @@
+:root {
+  color: #f4f4f5;
+  background: #000;
+  font-family:
+    Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #000;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.portal-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.portal-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 24px 16px;
+  border-right: 1px solid #29313b;
+}
+
+.portal-brand {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.portal-brand:focus-visible,
+.portal-sidebar a:focus-visible,
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid #c4d5e7;
+  outline-offset: 3px;
+}
+
+.plugin-selector {
+  display: grid;
+  gap: 8px;
+  color: #a8b0bb;
+  font-size: 13px;
+}
+
+.plugin-selector select,
+button {
+  padding: 9px 11px;
+  border: 1px solid #394450;
+  border-radius: 8px;
+  color: #f4f4f5;
+  background: transparent;
+}
+
+.portal-sidebar nav {
+  display: grid;
+  gap: 4px;
+}
+
+.portal-sidebar nav a {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #a8b0bb;
+  text-decoration: none;
+}
+
+.portal-sidebar nav a[aria-current="page"] {
+  color: #fff;
+  background: #18202a;
+}
+
+.portal-main {
+  min-width: 0;
+}
+
+.portal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 0 32px;
+  border-bottom: 1px solid #29313b;
+}
+
+.portal-header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.plugin-identity {
+  color: #7f8995;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.empty-state,
+.portal-empty-root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 72px 32px;
+}
+
+.empty-state h2 {
+  margin: 0 0 12px;
+}
+
+.empty-state p {
+  color: #9ca5b0;
+}
+
+.empty-state button {
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .portal-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #29313b;
+  }
+
+  .portal-sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
