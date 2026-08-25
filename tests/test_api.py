@@ -136,6 +136,55 @@ class PortalApiTests(unittest.TestCase):
 
         self.assertNotIn(str(missing), str(caught.exception))
 
+    def test_prompts_and_workflows_are_available_through_the_same_session_api(self) -> None:
+        plugin_key = "company-dev/sample-plugin"
+        prompts = self.api.save_prompts(
+            self.token,
+            plugin_key,
+            {
+                "expectedRevision": 0,
+                "items": [{"id": "check", "title": "检查", "content": "检查内容"}],
+            },
+        )
+        self.assertEqual(prompts["revision"], 1)
+        self.assertEqual(self.api.get_prompts(plugin_key)["items"][0]["id"], "check")
+        self.assertEqual(self.api.get_prompts("company-dev/yusheng-inc")["items"], [])
+
+        workflow = {
+            "pluginKey": plugin_key,
+            "tabs": [
+                {
+                    "id": "installation",
+                    "title": "插件安装",
+                    "sections": [
+                        {
+                            "id": "first",
+                            "title": "首次安装",
+                            "steps": [
+                                {
+                                    "id": "prepare",
+                                    "label": "准备",
+                                    "title": "取得插件包",
+                                    "description": "",
+                                    "next": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        saved = self.api.save_workflows(
+            self.token,
+            plugin_key,
+            {"expectedRevision": 0, "workflow": workflow},
+        )
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(self.api.get_workflows(plugin_key)["tabs"][0]["id"], "installation")
+
+        with self.assertRaisesRegex(ApiError, "会话无效"):
+            self.api.save_prompts("wrong-token", plugin_key, {"expectedRevision": 1, "items": []})
+
 
 if __name__ == "__main__":
     unittest.main()

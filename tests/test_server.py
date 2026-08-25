@@ -91,6 +91,36 @@ class PortalServerTests(unittest.TestCase):
                 test_only=True,
             )
 
+    def test_serves_plugin_scoped_prompts_and_workflows(self) -> None:
+        with self.request("/api/session", method="POST", body={}) as response:
+            token = json.load(response)["token"]
+        headers = {"X-Portal-Session": token}
+        encoded_key = "company-dev%2Fsample-plugin"
+
+        with self.request(
+            f"/api/plugins/{encoded_key}/prompts",
+            method="POST",
+            body={
+                "expectedRevision": 0,
+                "items": [{"id": "one", "title": "一", "content": "内容"}],
+            },
+            headers=headers,
+        ) as response:
+            self.assertEqual(json.load(response)["revision"], 1)
+        with self.request(f"/api/plugins/{encoded_key}/prompts") as response:
+            self.assertEqual(json.load(response)["items"][0]["id"], "one")
+
+        workflow = {"pluginKey": "company-dev/sample-plugin", "tabs": []}
+        with self.request(
+            f"/api/plugins/{encoded_key}/workflows",
+            method="POST",
+            body={"expectedRevision": 0, "workflow": workflow},
+            headers=headers,
+        ) as response:
+            self.assertEqual(json.load(response)["revision"], 1)
+        with self.request(f"/api/plugins/{encoded_key}/workflows") as response:
+            self.assertEqual(json.load(response)["tabs"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

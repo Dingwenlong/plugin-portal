@@ -60,6 +60,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
     _PROMOTE = re.compile(r"^/api/plugins/([^/]+)/promote$")
     _ROLLBACK = re.compile(r"^/api/plugins/([^/]+)/rollback$")
     _SNAPSHOT = re.compile(r"^/api/plugins/([^/]+)/snapshot$")
+    _PROMPTS = re.compile(r"^/api/plugins/([^/]+)/prompts$")
+    _WORKFLOWS = re.compile(r"^/api/plugins/([^/]+)/workflows$")
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._same_origin():
@@ -73,6 +75,15 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         if match:
             self._call_api(lambda: self.server.api.get_snapshot(unquote(match.group(1))))
             return
+        for pattern, operation in (
+            (self._PROMPTS, self.server.api.get_prompts),
+            (self._WORKFLOWS, self.server.api.get_workflows),
+        ):
+            match = pattern.fullmatch(path)
+            if match:
+                plugin_key = unquote(match.group(1))
+                self._call_api(lambda operation=operation: operation(plugin_key))
+                return
         self._serve_static(path)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -99,6 +110,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         for pattern, operation in (
             (self._PROMOTE, self.server.api.promote),
             (self._ROLLBACK, self.server.api.rollback),
+            (self._PROMPTS, self.server.api.save_prompts),
+            (self._WORKFLOWS, self.server.api.save_workflows),
         ):
             match = pattern.fullmatch(path)
             if match:

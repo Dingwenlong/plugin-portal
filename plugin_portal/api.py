@@ -8,7 +8,9 @@ from typing import Any
 
 from .models import ModelValidationError, parse_plugin_key
 from .plugin_reader import PluginReadError, preview_plugin
+from .prompts import PromptRepository, PromptValidationError
 from .storage import PortalStore, RevisionConflict, StorageError
+from .workflows import WorkflowRepository, WorkflowValidationError
 
 
 class ApiError(RuntimeError):
@@ -21,6 +23,8 @@ class ApiError(RuntimeError):
 class PortalApi:
     def __init__(self, store: PortalStore):
         self.store = store
+        self.prompts = PromptRepository(store)
+        self.workflows = WorkflowRepository(store)
         self._sessions: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = threading.RLock()
 
@@ -147,6 +151,50 @@ class PortalApi:
         except StorageError:
             raise ApiError("活动插件快照不可用", status=500, code="snapshot_unavailable") from None
 
+    def get_prompts(self, plugin_key: str) -> dict[str, Any]:
+        self._require_plugin_key(plugin_key)
+        try:
+            return self.prompts.get(plugin_key)
+        except (PromptValidationError, StorageError):
+            raise ApiError("Prompts 资料不可用", status=500, code="prompts_unavailable") from None
+
+    def save_prompts(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
+        self._require_session(token)
+        self._require_plugin_key(plugin_key)
+        if not isinstance(payload, dict) or set(payload) != {"expectedRevision", "items"}:
+            raise ApiError("Prompts 变更结构无效")
+        revision = self._revision(payload["expectedRevision"])
+        try:
+            return self.prompts.save(plugin_key, payload["items"], expected_revision=revision)
+        except PromptValidationError as error:
+            raise ApiError(str(error), code="prompts_invalid") from None
+        except RevisionConflict as error:
+            raise ApiError(str(error), status=409, code="revision_conflict") from None
+        except StorageError:
+            raise ApiError("无法保存 Prompts", status=500, code="storage_failed") from None
+
+    def get_workflows(self, plugin_key: str) -> dict[str, Any]:
+        self._require_plugin_key(plugin_key)
+        try:
+            return self.workflows.get(plugin_key)
+        except (WorkflowValidationError, StorageError):
+            raise ApiError("流程资料不可用", status=500, code="workflows_unavailable") from None
+
+    def save_workflows(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
+        self._require_session(token)
+        self._require_plugin_key(plugin_key)
+        if not isinstance(payload, dict) or set(payload) != {"expectedRevision", "workflow"}:
+            raise ApiError("流程变更结构无效")
+        revision = self._revision(payload["expectedRevision"])
+        try:
+            return self.workflows.save(plugin_key, payload["workflow"], expected_revision=revision)
+        except WorkflowValidationError as error:
+            raise ApiError(str(error), code="workflow_invalid") from None
+        except RevisionConflict as error:
+            raise ApiError(str(error), status=409, code="revision_conflict") from None
+        except StorageError:
+            raise ApiError("无法保存流程", status=500, code="storage_failed") from None
+
     def _require_session(self, token: str) -> dict[str, dict[str, Any]]:
         if not isinstance(token, str):
             raise ApiError("会话无效", status=401, code="invalid_session")
@@ -185,3 +233,9 @@ class PortalApi:
             parse_plugin_key(plugin_key)
         except ModelValidationError:
             raise ApiError("插件身份无效") from None
+
+    @staticmethod
+    def _revision(value: object) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ApiError("expectedRevision 无效")
+        return value
