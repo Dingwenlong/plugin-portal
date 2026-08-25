@@ -19,7 +19,9 @@ body {
 }
 
 button,
-select {
+select,
+input,
+textarea {
   font: inherit;
 }
 
@@ -112,10 +114,185 @@ button {
 }
 
 .empty-state,
-.portal-empty-root {
+.portal-empty-root,
+.portal-content {
   max-width: 960px;
   margin: 0 auto;
-  padding: 72px 32px;
+  padding: 48px 32px;
+}
+
+.portal-content {
+  max-width: 1360px;
+}
+
+.table-frame {
+  overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #29313b;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: #9ca5b0;
+  font-size: 13px;
+}
+
+td small,
+.release-view small {
+  display: block;
+  margin-top: 6px;
+  color: #7f8995;
+}
+
+.empty-copy {
+  color: #9ca5b0;
+}
+
+.content-list article {
+  padding: 16px 0;
+  border-bottom: 1px solid #29313b;
+}
+
+.rules-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 32px;
+}
+
+.rules-layout nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.rules-layout nav button {
+  text-align: left;
+}
+
+.markdown-document {
+  min-width: 0;
+}
+
+.markdown-document > :first-child,
+.release-view > :first-child {
+  margin-top: 0;
+}
+
+.prompts-view > button,
+.view-actions {
+  margin-bottom: 20px;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.edit-form,
+.workflow-editor,
+.workflow-editor fieldset {
+  display: grid;
+  gap: 14px;
+}
+
+.edit-form {
+  max-width: 680px;
+  margin-top: 20px;
+}
+
+.edit-form label,
+.workflow-editor label {
+  display: grid;
+  gap: 6px;
+  color: #a8b0bb;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #394450;
+  border-radius: 8px;
+  color: #f4f4f5;
+  background: transparent;
+}
+
+textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.workflow-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.workflow-tabs button[aria-selected="true"] {
+  color: #fff;
+  background: #18202a;
+}
+
+.workflow-section + .workflow-section {
+  margin-top: 40px;
+}
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.workflow-step {
+  padding: 18px;
+  border: 1px solid #394450;
+  border-radius: 10px;
+}
+
+.workflow-step > span {
+  color: #9fb8d0;
+  font-size: 12px;
+}
+
+.workflow-step h3 {
+  margin: 10px 0 0;
+}
+
+.workflow-step p {
+  color: #9ca5b0;
+}
+
+.workflow-editor fieldset {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #29313b;
+}
+
+.workflow-step-editor {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid #29313b;
+}
+
+.workflow-preview {
+  padding: 20px 0;
+  border-top: 1px solid #29313b;
+  border-bottom: 1px solid #29313b;
 }
 
 .empty-state h2 {
@@ -142,5 +319,9 @@ button {
 
   .portal-sidebar nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rules-layout {
+    grid-template-columns: 1fr;
   }
 }

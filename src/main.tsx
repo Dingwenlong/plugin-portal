@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import App from "./App";
+import { PortalShell } from "./portal/PortalShell";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <PortalShell />
   </StrictMode>,
 );
