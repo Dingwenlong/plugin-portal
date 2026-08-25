@@ -1,8 +1,8 @@
-# company-dev Portal 独立多插件只读门户设计
+# Plugin Portal 独立多插件只读门户设计
 
 日期：2026-08-25
 
-状态：待用户复核书面规格
+状态：用户已确认
 
 ## 1. 目标
 
@@ -28,7 +28,7 @@ Portal、研发助手插件和昱勝 Inc 是三个独立产品：源码、版本
 
 ## 3. 运行与发布边界
 
-Portal 源码位于独立公开仓库 `Dingwenlong/company-dev-portal`。运行时仅供仓库所有者个人使用，默认绑定 `127.0.0.1:9137`，不监听外部网卡。
+Portal 源码位于独立公开仓库 `Dingwenlong/plugin-portal`。运行时仅供仓库所有者个人使用，默认绑定 `127.0.0.1:9137`，不监听外部网卡。
 
 Portal 使用自己的版本、构建、测试和本地启动流程。Portal 的源码发布、构建和重启不需要任何插件发布者批准。插件仍由各自发布者独立管理。
 
@@ -211,7 +211,7 @@ Portal 提供简单表单编辑器：
 首版使用本地 JSON 文件和原子写入，不使用数据库。本机运行数据位于操作系统的个人应用数据目录，不位于 Git 仓库：
 
 ```text
-company-dev-portal/
+plugin-portal/
 ├── catalog.json
 ├── active-snapshots.json
 ├── snapshots/
