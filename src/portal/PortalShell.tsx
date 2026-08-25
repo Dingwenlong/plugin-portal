@@ -53,6 +53,8 @@ const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string }> = [
   { page: "releases", label: "版本沿革" },
 ];
 
+const LAST_PLUGIN_KEY = "plugin-portal.last-plugin";
+
 export function PortalShell({
   client,
   initialHash,
@@ -79,8 +81,18 @@ export function PortalShell({
     resolvedClient.listPlugins().then((nextCatalog) => {
       if (!active) return;
       setCatalog(nextCatalog);
-      const nextRoute = parsePortalRoute(initialHash ?? window.location.hash, nextCatalog.items.map((item) => item.id));
-      setSelectedPluginId(nextRoute.pluginId);
+      const sourceHash = initialHash ?? window.location.hash;
+      const nextRoute = parsePortalRoute(sourceHash, nextCatalog.items.map((item) => item.id));
+      const remembered = initialHash === undefined && !sourceHash ? readRememberedPlugin() : undefined;
+      const nextPluginId = remembered && nextCatalog.items.some((item) => item.id === remembered)
+        ? remembered
+        : nextRoute.pluginId;
+      setSelectedPluginId(nextPluginId);
+      if (initialHash === undefined && nextPluginId && !sourceHash) {
+        const nextHash = portalHref(nextPluginId, nextRoute.page);
+        setBrowserHash(nextHash);
+        window.location.hash = nextHash;
+      }
       setLoading(false);
     }).catch((reason: unknown) => {
       if (!active) return;
@@ -89,6 +101,13 @@ export function PortalShell({
     });
     return () => { active = false; };
   }, [resolvedClient, initialHash]);
+
+  useEffect(() => {
+    if (initialHash !== undefined) return;
+    if (route.pluginId && route.pluginId !== selectedPluginId) {
+      setSelectedPluginId(route.pluginId);
+    }
+  }, [initialHash, route.pluginId, selectedPluginId]);
 
   useEffect(() => {
     if (initialHash !== undefined) return undefined;
@@ -126,6 +145,12 @@ export function PortalShell({
     const nextCatalog = await resolvedClient.listPlugins();
     setCatalog(nextCatalog);
     setSelectedPluginId(pluginId);
+    rememberPlugin(pluginId);
+    if (initialHash === undefined) {
+      const nextHash = portalHref(pluginId, page);
+      setBrowserHash(nextHash);
+      window.location.hash = nextHash;
+    }
     const changed = nextCatalog.items.find((item) => item.id === pluginId);
     if (changed) {
       setData((current) => {
@@ -152,7 +177,15 @@ export function PortalShell({
         <label className="plugin-selector">
           <span>当前插件</span>
           <select aria-label="当前插件" value={selectedPlugin.id} onChange={(event) => {
-            setSelectedPluginId(event.currentTarget.value);
+            const pluginId = event.currentTarget.value;
+            rememberPlugin(pluginId);
+            if (initialHash === undefined) {
+              const nextHash = portalHref(pluginId, page);
+              setBrowserHash(nextHash);
+              window.location.hash = nextHash;
+            } else {
+              setSelectedPluginId(pluginId);
+            }
             setEditingWorkflow(false);
           }}>
             {catalog.items.map((plugin) => <option key={plugin.pluginKey} value={plugin.id}>{plugin.name}</option>)}
@@ -189,6 +222,22 @@ export function PortalShell({
       </main>
     </div>
   );
+}
+
+function readRememberedPlugin(): string | undefined {
+  try {
+    return window.localStorage.getItem(LAST_PLUGIN_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberPlugin(pluginId: string): void {
+  try {
+    window.localStorage.setItem(LAST_PLUGIN_KEY, pluginId);
+  } catch {
+    // URL remains the canonical, refresh-safe selection when storage is unavailable.
+  }
 }
 
 function renderPage({

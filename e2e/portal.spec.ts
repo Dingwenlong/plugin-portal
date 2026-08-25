@@ -45,6 +45,9 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByText("研发 Prompt")).toHaveCount(0);
     await page.getByLabel("当前插件").selectOption("project-delivery-hub");
     await expect(page.getByText("研发 Prompt")).toBeVisible();
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/prompts`);
+    await page.reload();
+    await expect(page.getByText("研发 Prompt")).toBeVisible();
     await expect(page.getByRole("link", { name: "Prompts" })).toHaveAttribute(
       "href",
       "#/plugins/project-delivery-hub/prompts",
