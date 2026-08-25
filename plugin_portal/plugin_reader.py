@@ -272,7 +272,7 @@ def _read_rules(root: Path, paths: list[str]) -> list[dict[str, str]]:
         if normalized in seen:
             raise PluginReadError("工程规范路径重复")
         seen.add(normalized)
-        markdown = _read_public_file(root, normalized, suffix=".md").rstrip()
+        markdown = _read_public_file(root, normalized, suffix=".md").replace("\r\n", "\n").replace("\r", "\n").rstrip()
         try:
             markdown = require_safe_markdown(markdown, "工程规范正文")
         except PublicTextError as error:

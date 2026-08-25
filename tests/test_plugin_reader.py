@@ -67,6 +67,17 @@ class PluginReaderTests(unittest.TestCase):
         for private_value in ("command", "args", "env", str(self.plugin_root)):
             self.assertNotIn(private_value, serialized)
 
+    def test_normalizes_public_markdown_newlines(self) -> None:
+        rule = self.plugin_root / "rules" / "public.md"
+        rule.write_bytes("# 公开规范\r\n\r\n只展示公开正文。\r\n".encode("utf-8"))
+
+        snapshot = self.preview()
+
+        self.assertEqual(
+            snapshot["engineeringRules"],
+            [{"path": "rules/public.md", "bodyMarkdown": "# 公开规范\n\n只展示公开正文。"}],
+        )
+
     def test_rejects_plugin_identity_mismatch(self) -> None:
         with self.assertRaisesRegex(PluginReadError, "插件身份不一致"):
             self.preview(expected_plugin_id="another-plugin")
