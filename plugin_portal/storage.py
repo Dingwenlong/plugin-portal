@@ -26,6 +26,7 @@ class RevisionConflict(StorageError):
 
 
 _DOCUMENT_NAME = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+_SNAPSHOT_ID = re.compile(r"^[0-9a-f]{64}$")
 _LOCKS_GUARD = threading.Lock()
 _LOCKS: dict[str, threading.RLock] = {}
 
@@ -100,6 +101,20 @@ class PortalStore:
                 return digest
             self._atomic_write_json(path, snapshot)
         return digest
+
+    def read_snapshot(self, plugin_key: str, snapshot_id: str) -> dict[str, Any]:
+        target, plugin_id = parse_plugin_key(plugin_key)
+        if not isinstance(snapshot_id, str) or not _SNAPSHOT_ID.fullmatch(snapshot_id):
+            raise StorageError("插件快照 ID 无效")
+        path = self.root / "snapshots" / target / plugin_id / f"{snapshot_id}.json"
+        with self._lock:
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                raise StorageError("插件快照不存在或已损坏") from error
+        if not isinstance(value, dict) or hashlib.sha256(canonical_json_bytes(value)).hexdigest() != snapshot_id:
+            raise StorageError("插件快照内容与摘要不一致")
+        return value
 
     def _atomic_write_json(self, path: Path, value: object) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
