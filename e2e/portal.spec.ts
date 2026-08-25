@@ -13,31 +13,44 @@ test.describe.serial("Plugin Portal", () => {
     await portal?.stop();
   });
 
-  test("opens the local directory picker and detects a new plugin without manual identity input", async ({ page }) => {
-    await page.goto(portal.baseUrl);
+  test("keeps the original cover and opens plugin inclusion from the Hub", async ({ page }) => {
+    await page.goto(`${portal.baseUrl}/#/`);
+    await expect(page.locator(".hub-cover")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Start" }).click();
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
+    await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible();
+    await page.getByRole("button", { name: "纳入插件" }).click();
+    await expect(page.getByRole("dialog", { name: "纳入插件" })).toBeVisible();
     await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
     await expect(page.getByLabel("插件 ID")).toHaveCount(0);
 
     await page.getByRole("button", { name: "选择插件目录" }).click();
-
     await expect(page.getByText("将纳入 研发助手插件 v3.7.19")).toBeVisible();
-    await expect(page.getByText("project-delivery-hub · v3.7.19")).toBeVisible();
-    await expect.poll(() => portal.listPlugins()).toMatchObject({ revision: 0, items: [] });
+    await page.getByRole("button", { name: "确认纳入" }).click();
+
+    await expect(page.getByRole("dialog", { name: "纳入插件" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "研发助手插件" })).toHaveAttribute(
+      "href",
+      "#/plugins/project-delivery-hub/overview",
+    );
+    await expect.poll(() => portal.listPlugins()).toMatchObject({
+      revision: 1,
+      items: [{ id: "project-delivery-hub", version: "3.7.19" }],
+    });
   });
 
   test("previews without mutation, promotes two plugins and rolls one back", async () => {
-    await expect.poll(() => portal.listPlugins()).toMatchObject({ revision: 0, items: [] });
+    await expect.poll(() => portal.listPlugins()).toMatchObject({ revision: 1 });
 
-    const first = await portal.preview("project-delivery-hub", "3.7.17", "研发助手插件");
-    expect(first.snapshot.plugin.version).toBe("3.7.17");
-    expect((await portal.listPlugins()).items).toHaveLength(0);
-    await portal.promote(first, 0);
-
-    const refreshed = await portal.preview("project-delivery-hub", "3.7.18", "研发助手插件");
+    const refreshed = await portal.preview("project-delivery-hub", "3.7.20", "研发助手插件");
+    expect((await portal.snapshot("company-dev/project-delivery-hub")).plugin.version).toBe("3.7.19");
     await portal.promote(refreshed, 1);
-    expect((await portal.snapshot("company-dev/project-delivery-hub")).plugin.version).toBe("3.7.18");
+    expect((await portal.snapshot("company-dev/project-delivery-hub")).plugin.version).toBe("3.7.20");
     await portal.rollback("company-dev/project-delivery-hub", 2);
-    expect((await portal.snapshot("company-dev/project-delivery-hub")).plugin.version).toBe("3.7.17");
+    expect((await portal.snapshot("company-dev/project-delivery-hub")).plugin.version).toBe("3.7.19");
 
     const yusheng = await portal.preview("yusheng-inc", "1.1.4", "昱勝 Inc");
     await portal.promote(yusheng, 3);
@@ -74,22 +87,23 @@ test.describe.serial("Plugin Portal", () => {
   });
 
   test("refreshes and rolls back a selected plugin from the management panel", async ({ page }) => {
+    portal.preparePickerPlugin("3.7.21");
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/releases`);
-    await expect(page.getByText("v3.7.17")).toBeVisible();
+    await expect(page.getByText("v3.7.19")).toBeVisible();
     await page.getByRole("button", { name: "管理插件" }).click();
     await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
     await expect(page.getByLabel("插件 ID")).toHaveCount(0);
     await page.getByRole("button", { name: "选择插件目录" }).click();
-    await expect(page.getByText("版本 3.7.17 → 3.7.19")).toBeVisible();
+    await expect(page.getByText("版本 3.7.19 → 3.7.21")).toBeVisible();
     await page.getByRole("button", { name: "确认刷新" }).click();
     await expect(page.getByRole("button", { name: "回滚上一版" })).toBeVisible();
     await page.getByRole("button", { name: "管理插件" }).click();
-    await expect(page.getByText("v3.7.19")).toBeVisible();
+    await expect(page.getByText("v3.7.21")).toBeVisible();
 
     await page.getByRole("button", { name: "管理插件" }).click();
     await page.getByRole("button", { name: "回滚上一版" }).click();
     await page.getByRole("button", { name: "管理插件" }).click();
-    await expect(page.getByText("v3.7.18")).toBeVisible();
+    await expect(page.getByText("v3.7.20")).toBeVisible();
   });
 
   test("keeps every fixed page reachable without horizontal overflow", async ({ page }) => {

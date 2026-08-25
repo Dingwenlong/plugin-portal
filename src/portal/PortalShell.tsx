@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
 import { PluginManager, type PluginManagementClient } from "./PluginManager";
 import { parsePortalRoute, portalHref, type PortalPage } from "./routes";
@@ -73,7 +74,12 @@ export function PortalShell({
   const [managingPlugins, setManagingPlugins] = useState(false);
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
-  const route = parsePortalRoute(initialHash ?? browserHash, pluginIds);
+  const sourceHash = initialHash ?? browserHash;
+  const isPluginLocation = /^#\/plugins\//.test(sourceHash);
+  const hubRoute: HubRoute | undefined = isPluginLocation
+    ? undefined
+    : sourceHash === "#/hub" ? "hub" : "cover";
+  const route = parsePortalRoute(sourceHash, pluginIds);
   const page = route.page;
 
   useEffect(() => {
@@ -83,16 +89,8 @@ export function PortalShell({
       setCatalog(nextCatalog);
       const sourceHash = initialHash ?? window.location.hash;
       const nextRoute = parsePortalRoute(sourceHash, nextCatalog.items.map((item) => item.id));
-      const remembered = initialHash === undefined && !sourceHash ? readRememberedPlugin() : undefined;
-      const nextPluginId = remembered && nextCatalog.items.some((item) => item.id === remembered)
-        ? remembered
-        : nextRoute.pluginId;
+      const nextPluginId = /^#\/plugins\//.test(sourceHash) ? nextRoute.pluginId : "";
       setSelectedPluginId(nextPluginId);
-      if (initialHash === undefined && nextPluginId && !sourceHash) {
-        const nextHash = portalHref(nextPluginId, nextRoute.page);
-        setBrowserHash(nextHash);
-        window.location.hash = nextHash;
-      }
       setLoading(false);
     }).catch((reason: unknown) => {
       if (!active) return;
@@ -104,10 +102,10 @@ export function PortalShell({
 
   useEffect(() => {
     if (initialHash !== undefined) return;
-    if (route.pluginId && route.pluginId !== selectedPluginId) {
+    if (!hubRoute && route.pluginId && route.pluginId !== selectedPluginId) {
       setSelectedPluginId(route.pluginId);
     }
-  }, [initialHash, route.pluginId, selectedPluginId]);
+  }, [hubRoute, initialHash, route.pluginId, selectedPluginId]);
 
   useEffect(() => {
     if (initialHash !== undefined) return undefined;
@@ -115,6 +113,12 @@ export function PortalShell({
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [initialHash]);
+
+  useEffect(() => {
+    if (initialHash !== undefined || isPluginLocation || sourceHash === "#/" || sourceHash === "#/hub") return;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/`);
+    setBrowserHash("#/");
+  }, [initialHash, isPluginLocation, sourceHash]);
 
   const selectedPlugin = catalog.items.find((plugin) => plugin.id === selectedPluginId);
   const selectedPluginKey = selectedPlugin?.pluginKey;
@@ -139,8 +143,25 @@ export function PortalShell({
     return () => { active = false; };
   }, [resolvedClient, data, selectedPluginKey]);
 
-  if (loading && catalog.items.length === 0) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>正在读取已纳入插件…</p></main>;
   if (error) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p role="alert">{error}</p></main>;
+  const refreshHubCatalog = async () => {
+    setCatalog(await resolvedClient.listPlugins());
+  };
+
+  if (hubRoute) return <HubEntry
+    catalog={catalog}
+    client={resolvedClient}
+    route={hubRoute}
+    onCatalogChanged={refreshHubCatalog}
+    onNavigate={(next) => {
+      if (initialHash !== undefined) return;
+      const nextHash = next === "hub" ? "#/hub" : "#/";
+      setBrowserHash(nextHash);
+      if (window.location.hash !== nextHash) window.location.hash = nextHash;
+    }}
+  />;
+
+  if (loading && catalog.items.length === 0) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>正在读取已纳入插件…</p></main>;
   const reloadCatalog = async (pluginId: string) => {
     const nextCatalog = await resolvedClient.listPlugins();
     setCatalog(nextCatalog);
@@ -161,13 +182,7 @@ export function PortalShell({
     }
   };
 
-  if (!selectedPlugin) return (
-    <main className="portal-empty-root">
-      <h1>Plugin Portal</h1>
-      <p>尚未人工纳入插件</p>
-      <PluginManager catalogRevision={catalog.revision} client={resolvedClient} onChanged={reloadCatalog} />
-    </main>
-  );
+  if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>该插件未纳入 Portal。</p></main>;
 
   const loaded = data[selectedPlugin.pluginKey];
   return (
@@ -222,14 +237,6 @@ export function PortalShell({
       </main>
     </div>
   );
-}
-
-function readRememberedPlugin(): string | undefined {
-  try {
-    return window.localStorage.getItem(LAST_PLUGIN_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function rememberPlugin(pluginId: string): void {

@@ -63,6 +63,46 @@ function createClient(): PortalDataClient {
 }
 
 describe("PortalShell", () => {
+  it("keeps the original cover as the canonical root entry", async () => {
+    const { container } = render(
+      <PortalShell
+        client={createClient()}
+        initialHash="#/"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(container.querySelector(".hub-cover")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "纳入插件" })).not.toBeInTheDocument();
+  });
+
+  it("adds plugin inclusion only to the original Hub page", async () => {
+    render(
+      <PortalShell
+        client={createClient()}
+        initialHash="#/hub"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "纳入插件" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "研发助手插件" })).toHaveAttribute(
+      "href",
+      "#/plugins/project-delivery-hub/overview",
+    );
+    expect(screen.getByRole("link", { name: "昱勝 Inc" })).toHaveAttribute(
+      "href",
+      "#/plugins/yusheng-inc/overview",
+    );
+    expect(screen.queryByLabelText("插件管理")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "纳入插件" }));
+    expect(screen.getByRole("dialog", { name: "纳入插件" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择插件目录" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument();
+  });
+
   it("keeps plugin-owned Prompts isolated while switching plugin", async () => {
     render(
       <PortalShell
