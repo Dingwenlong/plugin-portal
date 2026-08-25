@@ -86,6 +86,12 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
                 return
         self._serve_static(path)
 
+    def do_HEAD(self) -> None:  # noqa: N802
+        if not self._same_origin():
+            self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
+            return
+        self._serve_static(urlsplit(self.path).path, send_body=False)
+
     def do_POST(self) -> None:  # noqa: N802
         if not self._same_origin():
             self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
@@ -146,7 +152,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(status, value)
 
-    def _serve_static(self, request_path: str) -> None:
+    def _serve_static(self, request_path: str, *, send_body: bool = True) -> None:
         decoded = unquote(request_path)
         relative = "index.html" if decoded == "/" else decoded.lstrip("/")
         path = PurePosixPath(relative)
@@ -168,7 +174,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(payload)
+        if send_body:
+            self.wfile.write(payload)
 
     def _send_api_error(self, error: ApiError) -> None:
         self._send_error(error.status, error.code, str(error))

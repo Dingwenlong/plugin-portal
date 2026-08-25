@@ -52,6 +52,19 @@ class PortalServerTests(unittest.TestCase):
         with self.request("/api/plugins") as response:
             self.assertEqual(json.load(response), {"revision": 0, "items": []})
 
+    def test_head_returns_static_metadata_without_a_body(self) -> None:
+        expected_length = (self.web_root / "index.html").stat().st_size
+
+        try:
+            response = self.request("/", method="HEAD")
+        except HTTPError as error:
+            self.fail(f"HEAD returned {error.code} instead of 200")
+        with response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "text/html")
+            self.assertEqual(int(response.headers["Content-Length"]), expected_length)
+            self.assertEqual(response.read(), b"")
+
     def test_creates_session_without_exposing_token_in_cookie(self) -> None:
         with self.request("/api/session", method="POST", body={}) as response:
             payload = json.load(response)
