@@ -1,0 +1,12 @@
+node_modules/
+dist/
+web/
+coverage/
+playwright-report/
+test-results/
+portal-data/
+*.local.json
+.env
+.env.*
+__pycache__/
+*.pyc
