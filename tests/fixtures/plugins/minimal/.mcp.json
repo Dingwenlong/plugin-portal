@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sample-service": {
+      "command": "example-command",
+      "args": ["--example"],
+      "env": {
+        "EXAMPLE_VALUE": "fixture-only"
+      }
+    }
+  }
+}
