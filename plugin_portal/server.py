@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from .api import ApiError, PortalApi
+from .directory_picker import choose_plugin_directory
 from .storage import PortalStore
 
 
@@ -35,6 +36,7 @@ def create_server(
     data_root: Path | str,
     web_root: Path | str,
     test_only: bool = False,
+    directory_picker=choose_plugin_directory,
 ) -> PortalHTTPServer:
     if host != "127.0.0.1":
         raise ServerConfigurationError("Portal 只允许绑定 127.0.0.1")
@@ -51,7 +53,11 @@ def create_server(
         raise ServerConfigurationError("Portal 静态目录不存在") from error
     if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
         raise ServerConfigurationError("Portal 静态目录无效")
-    return PortalHTTPServer((host, port), PortalApi(PortalStore(data_root)), root)
+    return PortalHTTPServer(
+        (host, port),
+        PortalApi(PortalStore(data_root), directory_picker=directory_picker),
+        root,
+    )
 
 
 class PortalRequestHandler(BaseHTTPRequestHandler):
@@ -110,6 +116,9 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             return
 
         token = self.headers.get("X-Portal-Session", "")
+        if path == "/api/plugins/import/select-directory":
+            self._call_api(lambda: self.server.api.select_plugin_directory(token, body))
+            return
         if path == "/api/plugins/import/preview":
             self._call_api(lambda: self.server.api.preview_import(token, body), status=HTTPStatus.CREATED)
             return

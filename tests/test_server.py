@@ -71,6 +71,38 @@ class PortalServerTests(unittest.TestCase):
             self.assertRegex(payload["token"], r"^[A-Za-z0-9_-]{32,}$")
             self.assertIsNone(response.headers.get("Set-Cookie"))
 
+    def test_selects_plugin_directory_without_mutating_the_catalog(self) -> None:
+        selected_root = self.root / "selected-plugin"
+        selected_root.mkdir()
+        self.server.api.directory_picker = lambda: selected_root
+        with self.request("/api/session", method="POST", body={}) as response:
+            token = json.load(response)["token"]
+
+        try:
+            response = self.request(
+                "/api/plugins/import/select-directory",
+                method="POST",
+                body={},
+                headers={"X-Portal-Session": token},
+            )
+        except HTTPError as error:
+            self.fail(f"directory picker returned {error.code} instead of 200")
+        with response:
+            self.assertEqual(json.load(response), {"selected": True, "path": str(selected_root)})
+        with self.request("/api/plugins") as response:
+            self.assertEqual(json.load(response), {"revision": 0, "items": []})
+
+    def test_directory_selection_requires_a_valid_session(self) -> None:
+        self.server.api.directory_picker = lambda: self.root
+        with self.assertRaises(HTTPError) as invalid_session:
+            self.request(
+                "/api/plugins/import/select-directory",
+                method="POST",
+                body={},
+                headers={"X-Portal-Session": "invalid"},
+            )
+        self.assertEqual(invalid_session.exception.code, 401)
+
     def test_rejects_cross_origin_and_directory_traversal(self) -> None:
         with self.assertRaises(HTTPError) as cross_origin:
             self.request("/api/plugins", headers={"Origin": "https://example.com"})

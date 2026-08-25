@@ -102,6 +102,10 @@ export interface PluginImportConfig {
   extensionTools: ExtensionTool[];
 }
 
+export type PluginDirectorySelection =
+  | { selected: false }
+  | { selected: true; path: string };
+
 export interface PluginImportCandidate {
   candidateId: string;
   pluginKey: string;

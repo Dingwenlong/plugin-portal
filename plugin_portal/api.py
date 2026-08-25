@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import secrets
 import threading
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from .models import ModelValidationError, parse_plugin_key
+from .directory_picker import choose_plugin_directory
 from .plugin_reader import PluginReadError, preview_plugin
 from .prompts import PromptRepository, PromptValidationError
 from .storage import PortalStore, RevisionConflict, StorageError
@@ -21,8 +23,13 @@ class ApiError(RuntimeError):
 
 
 class PortalApi:
-    def __init__(self, store: PortalStore):
+    def __init__(
+        self,
+        store: PortalStore,
+        directory_picker: Callable[[], Path | None] = choose_plugin_directory,
+    ):
         self.store = store
+        self.directory_picker = directory_picker
         self.prompts = PromptRepository(store)
         self.workflows = WorkflowRepository(store)
         self._sessions: dict[str, dict[str, dict[str, Any]]] = {}
@@ -33,6 +40,24 @@ class PortalApi:
         with self._lock:
             self._sessions[token] = {}
         return {"token": token}
+
+    def select_plugin_directory(self, token: str, payload: object) -> dict[str, Any]:
+        self._require_session(token)
+        if payload != {}:
+            raise ApiError("目录选择请求结构无效")
+        try:
+            selected = self.directory_picker()
+        except RuntimeError:
+            raise ApiError(
+                "无法打开插件目录选择器",
+                status=500,
+                code="directory_picker_failed",
+            ) from None
+        if selected is None:
+            return {"selected": False}
+        if not isinstance(selected, (Path, str)):
+            raise ApiError("目录选择器回应无效", status=500, code="directory_picker_failed")
+        return {"selected": True, "path": str(Path(selected).absolute())}
 
     def preview_import(self, token: str, payload: object) -> dict[str, Any]:
         candidates = self._require_session(token)
@@ -45,13 +70,13 @@ class PortalApi:
         }
         if not isinstance(payload, dict) or set(payload) != required:
             raise ApiError("导入资料结构无效")
-        if not isinstance(payload["pluginRoot"], str):
+        if not isinstance(payload["pluginRoot"], str) or not isinstance(payload["expectedPluginId"], str):
             raise ApiError("插件目录无效")
         try:
             snapshot = preview_plugin(
                 Path(payload["pluginRoot"]),
                 target=payload["target"],
-                expected_plugin_id=payload["expectedPluginId"],
+                expected_plugin_id=payload["expectedPluginId"].strip() or None,
                 approved_rule_paths=payload["approvedRulePaths"],
                 extension_tools=payload["extensionTools"],
             )

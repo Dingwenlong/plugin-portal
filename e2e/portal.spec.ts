@@ -13,6 +13,18 @@ test.describe.serial("Plugin Portal", () => {
     await portal?.stop();
   });
 
+  test("opens the local directory picker and detects a new plugin without manual identity input", async ({ page }) => {
+    await page.goto(portal.baseUrl);
+    await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
+    await expect(page.getByLabel("插件 ID")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "选择插件目录" }).click();
+
+    await expect(page.getByText("将纳入 研发助手插件 v3.7.19")).toBeVisible();
+    await expect(page.getByText("project-delivery-hub · v3.7.19")).toBeVisible();
+    await expect.poll(() => portal.listPlugins()).toMatchObject({ revision: 0, items: [] });
+  });
+
   test("previews without mutation, promotes two plugins and rolls one back", async () => {
     await expect.poll(() => portal.listPlugins()).toMatchObject({ revision: 0, items: [] });
 
@@ -62,12 +74,12 @@ test.describe.serial("Plugin Portal", () => {
   });
 
   test("refreshes and rolls back a selected plugin from the management panel", async ({ page }) => {
-    const pluginRoot = portal.preparePlugin("project-delivery-hub", "3.7.19", "研发助手插件");
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/releases`);
     await expect(page.getByText("v3.7.17")).toBeVisible();
     await page.getByRole("button", { name: "管理插件" }).click();
-    await page.getByLabel("插件目录").fill(pluginRoot);
-    await page.getByRole("button", { name: "预览插件" }).click();
+    await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
+    await expect(page.getByLabel("插件 ID")).toHaveCount(0);
+    await page.getByRole("button", { name: "选择插件目录" }).click();
     await expect(page.getByText("版本 3.7.17 → 3.7.19")).toBeVisible();
     await page.getByRole("button", { name: "确认刷新" }).click();
     await expect(page.getByRole("button", { name: "回滚上一版" })).toBeVisible();

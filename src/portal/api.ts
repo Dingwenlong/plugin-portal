@@ -1,5 +1,6 @@
 import type {
   PluginCatalog,
+  PluginDirectorySelection,
   PluginImportCandidate,
   PluginImportConfig,
   PluginMutationReceipt,
@@ -40,6 +41,21 @@ export class PortalClient {
       throw new Error("插件预览回应无效");
     }
     return value as unknown as PluginImportCandidate;
+  }
+
+  async selectPluginDirectory(): Promise<PluginDirectorySelection> {
+    const value = await this.mutate("/api/plugins/import/select-directory", {});
+    if (isClosedRecord(value, ["selected"]) && value.selected === false) {
+      return { selected: false };
+    }
+    if (
+      isClosedRecord(value, ["selected", "path"]) &&
+      value.selected === true &&
+      isText(value.path)
+    ) {
+      return { selected: true, path: value.path };
+    }
+    throw new Error("插件目录选择回应无效");
   }
 
   async promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt> {

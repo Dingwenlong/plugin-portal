@@ -37,6 +37,15 @@ export async function startTestPortal(): Promise<TestPortal> {
   const pluginRoot = join(temporaryRoot, "plugins");
   mkdirSync(dataRoot, { recursive: true });
   mkdirSync(pluginRoot, { recursive: true });
+  const pickerPluginRoot = join(pluginRoot, "picker-project-delivery-hub");
+  cpSync(join(repositoryRoot, "tests", "fixtures", "plugins", "minimal"), pickerPluginRoot, { recursive: true });
+  const pickerManifestPath = join(pickerPluginRoot, ".codex-plugin", "plugin.json");
+  const pickerManifest = JSON.parse(readFileSync(pickerManifestPath, "utf8")) as Record<string, unknown>;
+  pickerManifest.name = "project-delivery-hub";
+  pickerManifest.version = "3.7.19";
+  pickerManifest.description = "研发助手插件的公开说明。";
+  pickerManifest.interface = { displayName: "研发助手插件", shortDescription: "研发助手插件的公开说明。" };
+  writeFileSync(pickerManifestPath, `${JSON.stringify(pickerManifest, null, 2)}\n`, "utf8");
 
   const server = spawn(
     process.env.PYTHON ?? "python",
@@ -47,6 +56,8 @@ export async function startTestPortal(): Promise<TestPortal> {
       dataRoot,
       "--web-root",
       join(repositoryRoot, "dist"),
+      "--picker-root",
+      pickerPluginRoot,
     ],
     { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] },
   );

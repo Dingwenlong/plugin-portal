@@ -219,6 +219,32 @@ td small,
   margin-top: 20px;
 }
 
+.directory-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.advanced-import-options {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.advanced-import-options[open] {
+  padding-bottom: 4px;
+}
+
+.advanced-import-options summary {
+  cursor: pointer;
+  color: #a8b0bb;
+}
+
+.advanced-import-options label,
+.advanced-import-options button {
+  margin-top: 14px;
+}
+
 .edit-form label,
 .workflow-editor label {
   display: grid;
@@ -343,6 +369,10 @@ textarea {
   }
 
   .rules-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-picker-row {
     grid-template-columns: 1fr;
   }
 }

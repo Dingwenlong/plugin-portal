@@ -55,6 +55,7 @@ function createClient(): PortalDataClient {
     savePrompts: async (pluginKey, _revision, items) => ({ revision: 2, pluginKey, items }),
     getWorkflows: async (pluginKey) => ({ revision: 0, pluginKey, tabs: [] }),
     saveWorkflows: async (_pluginKey, _revision, workflow) => ({ revision: 1, ...workflow }),
+    selectPluginDirectory: async () => ({ selected: false }),
     previewImport: async () => { throw new Error("not used"); },
     promote: async () => { throw new Error("not used"); },
     rollback: async () => { throw new Error("not used"); },

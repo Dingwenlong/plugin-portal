@@ -52,4 +52,34 @@ describe("PortalClient", () => {
     );
     expect(calls[1].init?.method).toBe("POST");
   });
+
+  it("selects a plugin directory through the session-protected local endpoint", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const client = new PortalClient(async (input, init) => {
+      calls.push({ url: String(input), init });
+      if (String(input) === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      return Response.json({ selected: true, path: "C:\\plugins\\sample" });
+    });
+
+    await expect(client.selectPluginDirectory()).resolves.toEqual({
+      selected: true,
+      path: "C:\\plugins\\sample",
+    });
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/session",
+      "/api/plugins/import/select-directory",
+    ]);
+    expect(new Headers(calls[1].init?.headers).get("X-Portal-Session")).toBe(
+      "session-token-abcdefghijklmnopqrstuvwxyz",
+    );
+  });
+
+  it("rejects a directory selection response that exposes extra data", async () => {
+    const client = new PortalClient(async (input) => {
+      if (String(input) === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      return Response.json({ selected: false, path: "C:\\private" });
+    });
+
+    await expect(client.selectPluginDirectory()).rejects.toThrow("插件目录选择回应无效");
+  });
 });

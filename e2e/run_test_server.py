@@ -11,6 +11,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--web-root", type=Path, required=True)
+    parser.add_argument("--picker-root", type=Path, required=True)
     arguments = parser.parse_args()
     server = create_server(
         host="127.0.0.1",
@@ -18,6 +19,7 @@ def main() -> None:
         data_root=arguments.data_root,
         web_root=arguments.web_root,
         test_only=True,
+        directory_picker=lambda: arguments.picker_root,
     )
     print(json.dumps({"port": server.server_address[1]}), flush=True)
     try:
