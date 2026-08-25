@@ -93,3 +93,23 @@ export interface WorkflowValue {
 export interface WorkflowDocument extends WorkflowValue {
   revision: number;
 }
+
+export interface PluginImportConfig {
+  pluginRoot: string;
+  target: string;
+  expectedPluginId: string;
+  approvedRulePaths: string[];
+  extensionTools: ExtensionTool[];
+}
+
+export interface PluginImportCandidate {
+  candidateId: string;
+  pluginKey: string;
+  snapshot: PluginSnapshot;
+}
+
+export interface PluginMutationReceipt {
+  revision: number;
+  pluginKey: string;
+  snapshotId: string;
+}

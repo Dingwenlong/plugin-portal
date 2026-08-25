@@ -41,9 +41,9 @@ class PluginReaderTests(unittest.TestCase):
             {
                 "target": "company-dev",
                 "id": "sample-plugin",
-                "name": "sample-plugin",
+                "name": "示例插件",
                 "version": "1.2.3",
-                "summary": "用于验证公开插件资料。",
+                "summary": "公开的简短说明。",
             },
         )
         self.assertEqual(

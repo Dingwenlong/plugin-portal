@@ -107,6 +107,12 @@ button {
   font-size: 22px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .plugin-identity {
   color: #7f8995;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -293,6 +299,21 @@ textarea {
   padding: 20px 0;
   border-top: 1px solid #29313b;
   border-bottom: 1px solid #29313b;
+}
+
+.plugin-manager {
+  max-width: 760px;
+}
+
+.plugin-manager > p,
+.plugin-preview > p {
+  color: #9ca5b0;
+}
+
+.plugin-preview {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #29313b;
 }
 
 .empty-state h2 {

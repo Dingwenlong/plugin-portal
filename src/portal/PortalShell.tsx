@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { PortalClient } from "./api";
+import { PluginManager, type PluginManagementClient } from "./PluginManager";
 import { parsePortalRoute, portalHref, type PortalPage } from "./routes";
 import type {
   PluginCatalog,
+  PluginImportCandidate,
+  PluginImportConfig,
+  PluginMutationReceipt,
   PluginSnapshot,
   PromptDocument,
   PromptItem,
@@ -21,13 +25,16 @@ import {
 } from "./views/PortalViews";
 import { WorkflowEditor } from "./workflows/WorkflowEditor";
 
-export interface PortalDataClient {
+export interface PortalDataClient extends PluginManagementClient {
   listPlugins(): Promise<PluginCatalog>;
   getSnapshot(pluginKey: string): Promise<PluginSnapshot>;
   getPrompts(pluginKey: string): Promise<PromptDocument>;
   savePrompts(pluginKey: string, revision: number, items: PromptItem[]): Promise<PromptDocument>;
   getWorkflows(pluginKey: string): Promise<WorkflowDocument>;
   saveWorkflows(pluginKey: string, revision: number, workflow: WorkflowValue): Promise<WorkflowDocument>;
+  previewImport(config: PluginImportConfig): Promise<PluginImportCandidate>;
+  promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt>;
+  rollback(pluginKey: string, revision: number): Promise<PluginMutationReceipt>;
 }
 
 interface LoadedPluginData {
@@ -61,6 +68,7 @@ export function PortalShell({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState(false);
+  const [managingPlugins, setManagingPlugins] = useState(false);
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
   const route = parsePortalRoute(initialHash ?? browserHash, pluginIds);
@@ -114,7 +122,27 @@ export function PortalShell({
 
   if (loading && catalog.items.length === 0) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>正在读取已纳入插件…</p></main>;
   if (error) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p role="alert">{error}</p></main>;
-  if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>尚未人工纳入插件</p></main>;
+  const reloadCatalog = async (pluginId: string) => {
+    const nextCatalog = await resolvedClient.listPlugins();
+    setCatalog(nextCatalog);
+    setSelectedPluginId(pluginId);
+    const changed = nextCatalog.items.find((item) => item.id === pluginId);
+    if (changed) {
+      setData((current) => {
+        const next = { ...current };
+        delete next[changed.pluginKey];
+        return next;
+      });
+    }
+  };
+
+  if (!selectedPlugin) return (
+    <main className="portal-empty-root">
+      <h1>Plugin Portal</h1>
+      <p>尚未人工纳入插件</p>
+      <PluginManager catalogRevision={catalog.revision} client={resolvedClient} onChanged={reloadCatalog} />
+    </main>
+  );
 
   const loaded = data[selectedPlugin.pluginKey];
   return (
@@ -137,9 +165,12 @@ export function PortalShell({
         </nav>
       </aside>
       <main className="portal-main">
-        <header className="portal-header"><h1>{selectedPlugin.name}</h1><span className="plugin-identity">{selectedPlugin.id}</span></header>
+        <header className="portal-header">
+          <h1>{selectedPlugin.name}</h1>
+          <div className="header-actions"><span className="plugin-identity">{selectedPlugin.id}</span><button onClick={() => setManagingPlugins((value) => !value)} type="button">管理插件</button></div>
+        </header>
         <section className="portal-content" aria-busy={!loaded}>
-          {!loaded ? <p>正在读取公开资料…</p> : renderPage({
+          {managingPlugins ? <PluginManager catalogRevision={catalog.revision} client={resolvedClient} currentSnapshot={loaded?.snapshot} onChanged={reloadCatalog} /> : !loaded ? <p>正在读取公开资料…</p> : renderPage({
             page,
             loaded,
             editingWorkflow,

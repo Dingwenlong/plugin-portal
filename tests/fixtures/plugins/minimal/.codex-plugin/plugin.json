@@ -1,5 +1,9 @@
 {
   "name": "sample-plugin",
   "version": "1.2.3",
-  "description": "用于验证公开插件资料。"
+  "description": "用于验证公开插件资料。",
+  "interface": {
+    "displayName": "示例插件",
+    "shortDescription": "公开的简短说明。"
+  }
 }

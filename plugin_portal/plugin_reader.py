@@ -44,7 +44,14 @@ def preview_plugin(
         plugin_id = _identifier(manifest.get("name"), "插件 ID")
         target_id = _identifier(target, "target")
         version = require_public_text(manifest.get("version"), "插件版本", single_line=True)
-        summary = require_public_text(manifest.get("description"), "插件说明")
+        interface = manifest.get("interface", {})
+        if not isinstance(interface, dict):
+            raise PluginReadError("插件界面资料无效")
+        display_name = require_public_text(interface.get("displayName", plugin_id), "插件显示名称", single_line=True)
+        summary = require_public_text(
+            interface.get("shortDescription", manifest.get("description")),
+            "插件说明",
+        )
     except PublicTextError as error:
         raise PluginReadError(str(error)) from error
 
@@ -60,7 +67,7 @@ def preview_plugin(
         "plugin": {
             "target": target_id,
             "id": plugin_id,
-            "name": plugin_id,
+            "name": display_name,
             "version": version,
             "summary": summary,
         },

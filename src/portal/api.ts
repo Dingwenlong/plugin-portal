@@ -1,5 +1,8 @@
 import type {
   PluginCatalog,
+  PluginImportCandidate,
+  PluginImportConfig,
+  PluginMutationReceipt,
   PluginSnapshot,
   PromptDocument,
   PromptItem,
@@ -12,7 +15,7 @@ type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respons
 export class PortalClient {
   private sessionToken: string | undefined;
 
-  constructor(private readonly fetcher: Fetcher = fetch) {}
+  constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
 
   async listPlugins(): Promise<PluginCatalog> {
     const value = await this.request("/api/plugins");
@@ -24,6 +27,32 @@ export class PortalClient {
     const value = await this.request(this.pluginUrl(pluginKey, "snapshot"));
     if (!isPluginSnapshot(value)) throw new Error("插件公开资料回应无效");
     return value;
+  }
+
+  async previewImport(config: PluginImportConfig): Promise<PluginImportCandidate> {
+    const value = await this.mutate("/api/plugins/import/preview", config);
+    if (
+      !isClosedRecord(value, ["candidateId", "pluginKey", "snapshot"]) ||
+      !isText(value.candidateId) ||
+      !isText(value.pluginKey) ||
+      !isPluginSnapshot(value.snapshot)
+    ) {
+      throw new Error("插件预览回应无效");
+    }
+    return value as unknown as PluginImportCandidate;
+  }
+
+  async promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt> {
+    return this.mutationReceipt(await this.mutate(this.pluginUrl(pluginKey, "promote"), {
+      expectedRevision: revision,
+      candidateId,
+    }), pluginKey);
+  }
+
+  async rollback(pluginKey: string, revision: number): Promise<PluginMutationReceipt> {
+    return this.mutationReceipt(await this.mutate(this.pluginUrl(pluginKey, "rollback"), {
+      expectedRevision: revision,
+    }), pluginKey);
   }
 
   async getPrompts(pluginKey: string): Promise<PromptDocument> {
@@ -104,6 +133,18 @@ export class PortalClient {
       throw new Error(message ?? `Portal 请求失败（${response.status}）`);
     }
     return value;
+  }
+
+  private mutationReceipt(value: unknown, pluginKey: string): PluginMutationReceipt {
+    if (
+      !isClosedRecord(value, ["revision", "pluginKey", "snapshotId"]) ||
+      !isRevision(value.revision) ||
+      value.pluginKey !== pluginKey ||
+      !isText(value.snapshotId)
+    ) {
+      throw new Error("插件变更回应无效");
+    }
+    return value as unknown as PluginMutationReceipt;
   }
 }
 
