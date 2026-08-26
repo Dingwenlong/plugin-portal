@@ -27,6 +27,7 @@ _REPARSE_POINT = 0x400
 _MAX_PUBLIC_FILE_BYTES = 2 * 1024 * 1024
 _TOOL_FIELDS = {"id", "name", "purpose", "url"}
 _MARKDOWN_H1 = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+_CJK_TEXT = re.compile(r"[\u3400-\u9fff]")
 _ICON_TYPES = {
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
@@ -241,7 +242,11 @@ def _skill_display_name(root: Path, directory_name: str, markdown: str) -> str:
     if not isinstance(portal, dict):
         raise PluginReadError("Skill 公开合约无效")
     display_name = portal.get("displayName")
-    return _skill_title(markdown) if display_name is None else display_name
+    if display_name is None:
+        return _skill_title(markdown)
+    if not isinstance(display_name, str):
+        raise PluginReadError("Skill 公开合约名称无效")
+    return display_name if _CJK_TEXT.search(display_name) else _skill_title(markdown)
 
 
 def read_plugin_icon(plugin_root: Path | str) -> tuple[str, bytes]:

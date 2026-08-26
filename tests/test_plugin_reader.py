@@ -84,6 +84,23 @@ class PluginReaderTests(unittest.TestCase):
 
         self.assertEqual(snapshot["skills"][0]["name"], "合约中文名称")
 
+    def test_falls_back_to_the_markdown_heading_when_the_contract_name_is_not_chinese(self) -> None:
+        contract_path = self.plugin_root / "skills" / "sample-skill" / "skill.contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "identity": {"id": "sample-skill", "name": "sample-skill"},
+                    "portal": {"displayName": "Sample Skill"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        snapshot = self.preview()
+
+        self.assertEqual(snapshot["skills"][0]["name"], "示例技能")
+
     def test_normalizes_public_markdown_newlines(self) -> None:
         rule = self.plugin_root / "rules" / "public.md"
         rule.write_bytes("# 公开规范\r\n\r\n只展示公开正文。\r\n".encode("utf-8"))
