@@ -68,6 +68,16 @@ const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string; icon: LucideI
   { page: "releases", label: "版本沿革", icon: History },
 ];
 
+const PAGE_TITLES: Readonly<Record<PortalPage, string>> = {
+  overview: "鸟瞰全景",
+  skills: "Skills",
+  prompts: "Prompts",
+  mcp: "MCP",
+  extensions: "扩展工具",
+  rules: "工程规范",
+  releases: "版本沿革",
+};
+
 export function PortalShell({
   client,
   initialHash,
@@ -208,12 +218,12 @@ export function PortalShell({
             </a>
           ))}
         </nav>
+        {loaded ? <div className="portal-sidebar-download"><DownloadAction info={loaded.download} /></div> : null}
       </aside>
       <main className="portal-main">
         <header className="portal-header">
-          <h1>{selectedPlugin.name}</h1>
+          <h1>{PAGE_TITLES[page]}</h1>
           <div className="portal-header-actions">
-            {loaded && (page === "overview" || page === "releases") ? <DownloadAction info={loaded.download} /> : null}
             {loaded && page === "overview" ? (
               <button onClick={() => setEditingWorkflow(true)} ref={workflowTriggerRef} type="button">配置流程</button>
             ) : null}

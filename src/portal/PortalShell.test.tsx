@@ -165,6 +165,24 @@ describe("PortalShell", () => {
     expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
   });
 
+  it("uses the selected menu name as the page title and keeps the download at the sidebar bottom", async () => {
+    const { rerender } = render(
+      <PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />,
+    );
+
+    expect(await screen.findByRole("heading", { level: 1, name: "鸟瞰全景" })).toBeInTheDocument();
+    const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
+    expect(download.closest(".portal-sidebar-download")).not.toBeNull();
+    expect(download.closest(".portal-header-actions")).toBeNull();
+
+    rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Skills" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+
+    rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/releases" />);
+    expect(await screen.findByRole("heading", { level: 1, name: "版本沿革" })).toBeInTheDocument();
+  });
+
   it("keeps a delayed download probe after the main plugin content renders", async () => {
     let resolveDownload!: (value: {
       available: boolean;
