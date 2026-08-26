@@ -10,7 +10,7 @@ export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
     <ContentTable headings={["名称", "用途"]}>
       {snapshot.skills.map((skill) => (
         <tr key={skill.id}>
-          <td><strong>{skill.name}</strong><small>{skill.id}</small></td>
+          <td><strong>{skill.id}</strong><small>{skill.name === skill.id ? skill.description : skill.name}</small></td>
           <td>{skill.description}</td>
         </tr>
       ))}
@@ -139,7 +139,7 @@ export function PromptsView({
           </tr>)}
         </ContentTable>
       )}
-      <button ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} type="button">新增 Prompt</button>
+      <button className="portal-page-action" ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} type="button">新增 Prompt</button>
       {showForm ? (
         <PortalModal onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
           <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>

@@ -223,7 +223,7 @@ function renderPage({
 }) {
   switch (page) {
     case "overview":
-      return <><div className="view-actions"><button onClick={onEditWorkflow} ref={workflowTriggerRef} type="button">配置流程</button></div><OverviewView workflow={loaded.workflow} />{editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}</>;
+      return <><div className="view-actions"><button className="portal-page-action" onClick={onEditWorkflow} ref={workflowTriggerRef} type="button">配置流程</button></div><OverviewView workflow={loaded.workflow} />{editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}</>;
     case "skills": return <SkillsView snapshot={loaded.snapshot} />;
     case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} />;
     case "mcp": return <McpView snapshot={loaded.snapshot} />;

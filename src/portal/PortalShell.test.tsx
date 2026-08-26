@@ -95,6 +95,7 @@ describe("PortalShell", () => {
       "#/plugins/yusheng-inc/overview",
     );
     expect(screen.queryByLabelText("插件管理")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /^管理 / })).toHaveLength(0);
 
     fireEvent.click(screen.getByRole("button", { name: "纳入插件" }));
     expect(screen.getByRole("dialog", { name: "纳入插件" })).toBeInTheDocument();
@@ -102,10 +103,6 @@ describe("PortalShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "管理 研发助手插件" }));
-    expect(await screen.findByRole("dialog", { name: "管理 研发助手插件" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "刷新或回滚插件" })).toBeInTheDocument();
   });
 
   it("turns each plugin page into a single-plugin site without management or switching", async () => {
@@ -138,6 +135,7 @@ describe("PortalShell", () => {
   it("opens workflow configuration as a dialog from the overview only", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
     const trigger = await screen.findByRole("button", { name: "配置流程" });
+    expect(trigger).toHaveClass("portal-page-action");
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));

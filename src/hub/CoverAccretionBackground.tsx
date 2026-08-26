@@ -8,6 +8,24 @@ type RenderState = "loading" | "ready" | "fallback";
 type AnimationState = "running" | "static" | "frozen";
 type AnimationController = { setFrozen: (frozen: boolean) => void };
 
+const COVER_ACCRETION_MAX_BACKING_WIDTH = 960;
+const COVER_ACCRETION_MAX_BACKING_HEIGHT = 540;
+export const COVER_ACCRETION_FRAME_INTERVAL_MS = 1000 / 24;
+
+export function coverAccretionBackingSize(width: number, height: number) {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const scale = Math.min(
+    1,
+    COVER_ACCRETION_MAX_BACKING_WIDTH / safeWidth,
+    COVER_ACCRETION_MAX_BACKING_HEIGHT / safeHeight,
+  );
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale)),
+  };
+}
+
 function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
   const shader = gl.createShader(type);
   if (!shader) throw new Error("Unable to create the cover shader.");
@@ -107,11 +125,11 @@ export function CoverAccretionBackground({
     let disposed = false;
     let renderedFrames = 0;
     let lastClockSeconds = 0;
+    let lastRenderedAt = Number.NEGATIVE_INFINITY;
 
     const resize = () => {
       const bounds = canvas.getBoundingClientRect();
-      const width = Math.max(1, Math.round(bounds.width));
-      const height = Math.max(1, Math.round(bounds.height));
+      const { width, height } = coverAccretionBackingSize(bounds.width, bounds.height);
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
@@ -121,7 +139,6 @@ export function CoverAccretionBackground({
     };
 
     const render = (seconds: number, countFrame = true) => {
-      resize();
       gl.uniform1f(clockLocation, seconds);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       lastClockSeconds = seconds;
@@ -132,13 +149,17 @@ export function CoverAccretionBackground({
 
     const animate = (time: number) => {
       if (disposed || frozenRef.current) return;
-      const clockMultiplier = intensityRef.current === "surge" ? 1.65 : 1;
-      render((time / 1000) * clockMultiplier);
+      if (time - lastRenderedAt >= COVER_ACCRETION_FRAME_INTERVAL_MS) {
+        const clockMultiplier = intensityRef.current === "surge" ? 1.65 : 1;
+        render((time / 1000) * clockMultiplier);
+        lastRenderedAt = time;
+      }
       animationFrame = window.requestAnimationFrame(animate);
     };
 
     const start = () => {
       window.cancelAnimationFrame(animationFrame);
+      resize();
       if (frozenRef.current) {
         setAnimationState("frozen");
       } else if (motionQuery.matches) {
@@ -151,6 +172,7 @@ export function CoverAccretionBackground({
     };
 
     const handleResize = () => {
+      resize();
       if (frozenRef.current) render(lastClockSeconds, false);
       else if (motionQuery.matches) render(0);
     };

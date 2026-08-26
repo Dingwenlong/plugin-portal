@@ -37,9 +37,9 @@ const snapshot = {
 
 describe("snapshot views", () => {
   it("renders Skills, MCP and extension purposes without implementation statistics", () => {
-    const { rerender } = render(<SkillsView snapshot={snapshot} />);
-    expect(screen.getByText("示例技能")).toBeInTheDocument();
+    const { container, rerender } = render(<SkillsView snapshot={snapshot} />);
     expect(screen.getByText("sample-skill")).toBeInTheDocument();
+    expect(container.querySelector("td small")).toHaveTextContent("示例技能");
     expect(screen.queryByText(/工具数量|transport|timeout/i)).not.toBeInTheDocument();
 
     rerender(<McpView snapshot={snapshot} />);
@@ -47,6 +47,16 @@ describe("snapshot views", () => {
 
     rerender(<ExtensionsView snapshot={snapshot} />);
     expect(screen.getByText("查看测试结果。")).toBeInTheDocument();
+  });
+
+  it("falls back to the Chinese public description when a migrated skill name equals its ID", () => {
+    const migrated = {
+      ...snapshot,
+      skills: [{ id: "code-development", name: "code-development", description: "业务代码开发与修复。" }],
+    };
+
+    const { container } = render(<SkillsView snapshot={migrated} />);
+    expect(container.querySelector("td small")).toHaveTextContent("业务代码开发与修复。");
   });
 
   it("renders approved Markdown as safe elements rather than HTML", () => {
@@ -101,7 +111,9 @@ describe("PromptsView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "新增 Prompt" }));
+    const trigger = screen.getByRole("button", { name: "新增 Prompt" });
+    expect(trigger).toHaveClass("portal-page-action");
+    fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "新增 Prompt" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("常用场景"), { target: { value: "检查设计" } });
     fireEvent.change(screen.getByLabelText("Prompt 内容"), { target: { value: "检查字段与回应码。" } });
