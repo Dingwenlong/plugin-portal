@@ -61,6 +61,31 @@ describe("snapshot views", () => {
     expect(screen.getAllByText("业务代码开发与修复。")).toHaveLength(1);
   });
 
+  it("orders Skills by ID without mutating the plugin snapshot", () => {
+    const unordered = {
+      ...snapshot,
+      skills: [
+        { id: "code-development", name: "业务代码开发", description: "处理业务代码。" },
+        { id: "delivery-hub-navigator", name: "先锋", description: "选择交付路径。" },
+        { id: "api-test-db-fixture-preparer", name: "测试库资料准备", description: "准备测试资料。" },
+      ],
+    };
+
+    const { container } = render(<SkillsView snapshot={unordered} />);
+    const renderedIDs = Array.from(container.querySelectorAll("tbody tr strong"), (node) => node.textContent);
+
+    expect(renderedIDs).toEqual([
+      "api-test-db-fixture-preparer",
+      "code-development",
+      "delivery-hub-navigator",
+    ]);
+    expect(unordered.skills.map((skill) => skill.id)).toEqual([
+      "code-development",
+      "delivery-hub-navigator",
+      "api-test-db-fixture-preparer",
+    ]);
+  });
+
   it("shows an extension tool ID only when the public name is Chinese", () => {
     const tools = {
       ...snapshot,

@@ -8,9 +8,10 @@ const CHINESE_TEXT = /[\u3400-\u9fff]/;
 
 export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
   if (snapshot.skills.length === 0) return <Empty copy="该插件未提供 Skills" />;
+  const orderedSkills = [...snapshot.skills].sort((left, right) => left.id.localeCompare(right.id, "en"));
   return (
     <ContentTable headings={["名称", "用途"]}>
-      {snapshot.skills.map((skill) => (
+      {orderedSkills.map((skill) => (
         <tr key={skill.id}>
           <td><strong>{skill.id}</strong>{skill.name === skill.id ? null : <small>{skill.name}</small>}</td>
           <td>{skill.description}</td>
