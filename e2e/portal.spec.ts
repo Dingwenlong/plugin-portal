@@ -227,6 +227,52 @@ test.describe.serial("Plugin Portal", () => {
     await dialog.getByRole("button", { name: "关闭" }).click();
   });
 
+  test("keeps Prompt and extension table columns readable", async ({ page }) => {
+    const catalog = await portal.listPlugins();
+    if (!catalog.items.some((item) => item.id === "project-delivery-hub")) {
+      const candidate = await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件");
+      await portal.promote(candidate, catalog.revision);
+    }
+    await page.route("**/api/plugins/*/snapshot", async (route) => {
+      const response = await route.fetch();
+      const payload = await response.json() as {
+        plugin?: { id?: string };
+        extensionTools?: Array<{ id: string; name: string; purpose: string; url: string }>;
+      };
+      if (payload.plugin?.id === "project-delivery-hub") {
+        payload.extensionTools = [
+          { id: "allure-report", name: "Allure Report 3", purpose: "查看测试报告。", url: "https://example.com/allure" },
+        ];
+      }
+      await route.fulfill({ response, json: payload });
+    });
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/prompts`);
+    if (await page.getByRole("columnheader", { name: "常用场景" }).count() === 0) {
+      await page.getByRole("button", { name: "新增 Prompt" }).click();
+      await page.getByLabel("常用场景").fill("检查交付");
+      await page.getByLabel("Prompt 内容").fill("核对公开资料和流程。");
+      await page.getByRole("button", { name: "保存" }).click();
+    }
+
+    for (const width of [1600, 1120, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/prompts`);
+      const scenarioHeading = page.getByRole("columnheader", { name: "常用场景" });
+      await expect(scenarioHeading).toHaveCSS("min-width", "200px");
+      expect((await scenarioHeading.boundingBox())!.width).toBeGreaterThanOrEqual(200);
+
+      await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/extensions`);
+      const nameHeading = page.getByRole("columnheader", { name: "名称" });
+      const resourceHeading = page.getByRole("columnheader", { name: "了解更多" });
+      await expect(nameHeading).toHaveCSS("min-width", "180px");
+      await expect(resourceHeading).toHaveCSS("width", "96px");
+      await expect(resourceHeading).toHaveCSS("white-space", "nowrap");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    }
+  });
+
   test("keeps every fixed page reachable without horizontal overflow", async ({ page }) => {
     for (const width of [768, 1120, 1600]) {
       await page.setViewportSize({ width, height: 900 });

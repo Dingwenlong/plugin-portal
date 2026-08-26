@@ -104,6 +104,13 @@ describe("snapshot views", () => {
     expect(container.querySelector("td small")).toHaveTextContent("allure-report");
   });
 
+  it("keeps extension names wider and the resource column on one line", () => {
+    render(<ExtensionsView snapshot={snapshot} />);
+
+    const nameHeading = screen.getByRole("columnheader", { name: "名称" });
+    expect(nameHeading.closest("table")).toHaveClass("extensions-table");
+  });
+
   it("renders approved Markdown as safe elements rather than HTML", () => {
     render(<RulesView snapshot={snapshot} />);
     fireEvent.click(screen.getByRole("button", { name: "rules/public.md" }));
@@ -147,6 +154,21 @@ describe("snapshot views", () => {
 });
 
 describe("PromptsView", () => {
+  it("reserves a wider column for common scenarios", () => {
+    render(
+      <PromptsView
+        document={{
+          revision: 4,
+          pluginKey: "company-dev/sample-plugin",
+          items: [{ id: "check", scenario: "检查设计", content: "检查字段。", createdAt: "2026-08-12T07:38:30.798Z" }],
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "常用场景" }).closest("table")).toHaveClass("prompts-table");
+  });
+
   it("adds a Prompt through the supplied revision-aware callback", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

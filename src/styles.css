@@ -251,6 +251,24 @@ th {
   font-size: 13px;
 }
 
+.prompts-table th:first-child,
+.prompts-table td:first-child {
+  width: 200px;
+  min-width: 200px;
+}
+
+.extensions-table th:first-child,
+.extensions-table td:first-child {
+  width: 180px;
+  min-width: 180px;
+}
+
+.extensions-table th:last-child,
+.extensions-table td:last-child {
+  width: 96px;
+  white-space: nowrap;
+}
+
 td small,
 .release-view small {
   display: block;

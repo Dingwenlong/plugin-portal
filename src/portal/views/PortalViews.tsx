@@ -34,7 +34,7 @@ export function McpView({ snapshot }: { snapshot: PluginSnapshot }) {
 export function ExtensionsView({ snapshot }: { snapshot: PluginSnapshot }) {
   if (snapshot.extensionTools.length === 0) return <Empty copy="该插件未配置扩展工具" />;
   return (
-    <ContentTable headings={["名称", "用途", "了解更多"]}>
+    <ContentTable className="extensions-table" headings={["名称", "用途", "了解更多"]}>
       {snapshot.extensionTools.map((tool) => (
         <tr key={tool.id}>
           <td><strong>{tool.name}</strong>{CHINESE_TEXT.test(tool.name) && tool.name !== tool.id ? <small>{tool.id}</small> : null}</td>
@@ -123,7 +123,7 @@ export function PromptsView({
   return (
     <section className="prompts-view">
       {document.items.length === 0 ? <p className="empty-copy">尚未添加 Prompt</p> : (
-        <ContentTable headings={["常用场景", "Prompt", "添加时间", "操作"]}>
+        <ContentTable className="prompts-table" headings={["常用场景", "Prompt", "添加时间", "操作"]}>
           {document.items.map((item) => <tr key={item.id}>
             <td>{item.scenario}</td><td>{item.content}</td><td>{formatPromptTime(item.createdAt)}</td>
             <td className="row-actions">
@@ -160,8 +160,8 @@ export function PromptsView({
   );
 }
 
-function ContentTable({ headings, children }: { headings: string[]; children: React.ReactNode }) {
-  return <div className="table-frame"><table><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+function ContentTable({ className, headings, children }: { className?: string; headings: string[]; children: React.ReactNode }) {
+  return <div className="table-frame"><table className={className}><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
 }
 
 function Empty({ copy }: { copy: string }) {
