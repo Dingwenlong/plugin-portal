@@ -40,6 +40,9 @@ test.describe.serial("Plugin Portal", () => {
       revision: 1,
       items: [{ id: "project-delivery-hub", version: "3.7.19" }],
     });
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+    await expect(page.getByText("示例技能", { exact: true })).toBeVisible();
+    await expect(page.getByText("sample-skill", { exact: true })).toBeVisible();
   });
 
   test("previews without mutation, promotes two plugins and rolls one back", async () => {

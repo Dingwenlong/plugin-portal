@@ -26,6 +26,7 @@ _IDENTIFIER = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _REPARSE_POINT = 0x400
 _MAX_PUBLIC_FILE_BYTES = 2 * 1024 * 1024
 _TOOL_FIELDS = {"id", "name", "purpose", "url"}
+_MARKDOWN_H1 = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 
 
 def preview_plugin(
@@ -198,13 +199,21 @@ def _read_skills(root: Path) -> list[dict[str, str]]:
         front_matter = _front_matter(markdown)
         try:
             skill_id = _identifier(front_matter.get("name"), "Skill ID")
+            skill_name = require_public_text(_skill_title(markdown), "Skill 名称", single_line=True)
             description = require_public_text(front_matter.get("description"), "Skill 说明")
         except PublicTextError as error:
             raise PluginReadError(str(error)) from error
         if skill_id != directory_name:
             raise PluginReadError("Skill 身份与目录不一致")
-        projected.append({"id": skill_id, "name": skill_id, "description": description})
+        projected.append({"id": skill_id, "name": skill_name, "description": description})
     return projected
+
+
+def _skill_title(markdown: str) -> str:
+    match = _MARKDOWN_H1.search(markdown)
+    if match is None:
+        raise PluginReadError("Skill 缺少公开名称")
+    return match.group(1)
 
 
 def _front_matter(markdown: str) -> dict[str, str]:

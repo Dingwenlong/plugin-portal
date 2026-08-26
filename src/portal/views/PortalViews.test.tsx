@@ -39,6 +39,7 @@ describe("snapshot views", () => {
   it("renders Skills, MCP and extension purposes without implementation statistics", () => {
     const { rerender } = render(<SkillsView snapshot={snapshot} />);
     expect(screen.getByText("示例技能")).toBeInTheDocument();
+    expect(screen.getByText("sample-skill")).toBeInTheDocument();
     expect(screen.queryByText(/工具数量|transport|timeout/i)).not.toBeInTheDocument();
 
     rerender(<McpView snapshot={snapshot} />);

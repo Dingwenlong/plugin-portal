@@ -51,7 +51,7 @@ class PluginReaderTests(unittest.TestCase):
             [
                 {
                     "id": "sample-skill",
-                    "name": "sample-skill",
+                    "name": "示例技能",
                     "description": "展示一个经过筛选的公开能力。",
                 }
             ],
