@@ -537,6 +537,30 @@ textarea {
   color: #9ca5b0;
 }
 
+@media (min-width: 901px) {
+  .portal-modal-wide {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100dvh - 48px);
+    overflow: hidden;
+  }
+
+  .portal-modal-wide .workflow-editor {
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .portal-modal-wide .workflow-editor-layout {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .portal-modal-wide .workflow-inspector {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 .workflow-next-editor {
   display: grid;
   gap: 8px;

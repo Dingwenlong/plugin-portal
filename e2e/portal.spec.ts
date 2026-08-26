@@ -169,6 +169,41 @@ test.describe.serial("Plugin Portal", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  test("keeps the workflow inspector fixed while the canvas scrolls", async ({ page }) => {
+    await page.setViewportSize({ width: 1120, height: 600 });
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+    await page.getByRole("button", { name: "配置流程" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "配置流程" });
+    const canvas = dialog.getByRole("region", { name: "流程画布" });
+    const inspector = dialog.getByRole("complementary", { name: "属性栏" });
+    for (let index = 0; index < 10; index += 1) {
+      await canvas.getByRole("button", { name: "新增步骤" }).click();
+    }
+
+    const inspectorBefore = await inspector.boundingBox();
+    const canvasScroll = await canvas.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      };
+    });
+    const inspectorAfter = await inspector.boundingBox();
+
+    expect(canvasScroll.scrollHeight).toBeGreaterThan(canvasScroll.clientHeight);
+    expect(canvasScroll.scrollTop).toBeGreaterThan(0);
+    expect(inspectorBefore).not.toBeNull();
+    expect(inspectorAfter).not.toBeNull();
+    expect(inspectorAfter!.x).toBe(inspectorBefore!.x);
+    expect(inspectorAfter!.y).toBe(inspectorBefore!.y);
+    expect(inspectorAfter!.height).toBe(inspectorBefore!.height);
+    await expect(dialog.getByRole("heading", { name: "编辑具体步骤" })).toBeVisible();
+
+    await dialog.getByRole("button", { name: "关闭" }).click();
+  });
+
   test("keeps every fixed page reachable without horizontal overflow", async ({ page }) => {
     for (const width of [768, 1120, 1600]) {
       await page.setViewportSize({ width, height: 900 });
