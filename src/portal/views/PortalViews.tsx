@@ -4,6 +4,8 @@ import { PortalModal } from "../PortalModal";
 import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } from "../types";
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
 
+const CHINESE_TEXT = /[\u3400-\u9fff]/;
+
 export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
   if (snapshot.skills.length === 0) return <Empty copy="该插件未提供 Skills" />;
   return (
@@ -34,7 +36,7 @@ export function ExtensionsView({ snapshot }: { snapshot: PluginSnapshot }) {
     <ContentTable headings={["名称", "用途", "了解更多"]}>
       {snapshot.extensionTools.map((tool) => (
         <tr key={tool.id}>
-          <td><strong>{tool.name}</strong><small>{tool.id}</small></td>
+          <td><strong>{tool.name}</strong>{CHINESE_TEXT.test(tool.name) && tool.name !== tool.id ? <small>{tool.id}</small> : null}</td>
           <td>{tool.purpose}</td>
           <td><a href={tool.url} rel="noreferrer" target="_blank">打开资料</a></td>
         </tr>

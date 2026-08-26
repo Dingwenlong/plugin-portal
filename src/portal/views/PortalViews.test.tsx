@@ -61,6 +61,24 @@ describe("snapshot views", () => {
     expect(screen.getAllByText("业务代码开发与修复。")).toHaveLength(1);
   });
 
+  it("shows an extension tool ID only when the public name is Chinese", () => {
+    const tools = {
+      ...snapshot,
+      extensionTools: [
+        { id: "sonarqube", name: "SonarQube", purpose: "检查代码质量。", url: "https://example.com/sonarqube" },
+        { id: "allure-report", name: "测试报告", purpose: "查看测试结果。", url: "https://example.com/allure" },
+      ],
+    };
+
+    const { container } = render(<ExtensionsView snapshot={tools} />);
+
+    expect(screen.getByText("SonarQube")).toBeInTheDocument();
+    expect(screen.queryByText("sonarqube")).not.toBeInTheDocument();
+    expect(screen.getByText("测试报告")).toBeInTheDocument();
+    expect(container.querySelectorAll("td small")).toHaveLength(1);
+    expect(container.querySelector("td small")).toHaveTextContent("allure-report");
+  });
+
   it("renders approved Markdown as safe elements rather than HTML", () => {
     render(<RulesView snapshot={snapshot} />);
     fireEvent.click(screen.getByRole("button", { name: "rules/public.md" }));
