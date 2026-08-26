@@ -129,11 +129,32 @@ test.describe.serial("Plugin Portal", () => {
     await expect(selectedWorkflowTab).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
     await workflowAction.click();
-    await expect(page.getByRole("dialog", { name: "配置流程" })).toBeVisible();
-    await expect(page.getByLabel("Tab 标题")).toHaveValue("插件安装");
-    await expect(page.getByLabel("流程区域标题")).toHaveValue("首次安装");
-    await expect(page.getByLabel("步骤标题")).toHaveValue("取得插件包");
-    await page.getByRole("button", { name: "关闭" }).click();
+    const workflowDialog = page.getByRole("dialog", { name: "配置流程" });
+    const workflowCanvas = workflowDialog.getByRole("region", { name: "流程画布" });
+    await expect(workflowDialog).toBeVisible();
+    await expect(workflowCanvas.getByRole("tab", { name: "插件安装" })).toHaveAttribute("aria-selected", "true");
+    await expect(workflowDialog.getByRole("complementary", { name: "属性栏" })).toBeVisible();
+    await expect(workflowDialog.getByRole("heading", { name: "编辑具体步骤" })).toBeVisible();
+    await expect(workflowDialog.getByLabel("步骤标题")).toHaveValue("取得插件包");
+    await expect(workflowDialog.getByRole("button", { name: "预览流程" })).toHaveCount(0);
+
+    await workflowDialog.getByLabel("步骤标题").fill("取得正式插件包");
+    await expect(workflowCanvas.getByRole("button", { name: "取得正式插件包" })).toBeVisible();
+    await workflowCanvas.getByRole("button", { name: "首次安装" }).click();
+    await expect(workflowDialog.getByRole("heading", { name: "编辑流程区域" })).toBeVisible();
+    await workflowDialog.getByLabel("流程区域标题").fill("首次安装并配置");
+    await expect(workflowCanvas.getByRole("button", { name: "首次安装并配置" })).toBeVisible();
+    await workflowCanvas.getByRole("tab", { name: "插件安装" }).click();
+    await expect(workflowDialog.getByRole("heading", { name: "编辑 Tab" })).toBeVisible();
+    await workflowDialog.getByRole("button", { name: "保存流程" }).click();
+    await expect(workflowDialog).toHaveCount(0);
+    await expect(page.getByText("取得正式插件包", { exact: true })).toBeVisible();
+    await expect(page.getByText("首次安装并配置", { exact: true })).toBeVisible();
+
+    await workflowAction.click();
+    await page.getByRole("dialog", { name: "配置流程" }).press("Escape");
+    await expect(page.getByRole("dialog", { name: "配置流程" })).toHaveCount(0);
+    await expect(workflowAction).toBeFocused();
     await page.goto(`${portal.baseUrl}/#/plugins/yusheng-inc/overview`);
     await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
     expect(consoleErrors).toEqual([]);
@@ -148,8 +169,26 @@ test.describe.serial("Plugin Portal", () => {
         await expect(page.getByRole("link", { name })).toBeVisible();
       }
       await expect(page.getByRole("link", { name: "鸟瞰全景" })).toHaveCount(0);
+      await page.getByRole("button", { name: "配置流程" }).click();
+      const dialog = page.getByRole("dialog", { name: "配置流程" });
+      const canvas = dialog.getByRole("region", { name: "流程画布" });
+      const inspector = dialog.getByRole("complementary", { name: "属性栏" });
+      await expect(dialog).toBeVisible();
+      const [canvasBox, inspectorBox] = await Promise.all([canvas.boundingBox(), inspector.boundingBox()]);
+      expect(canvasBox).not.toBeNull();
+      expect(inspectorBox).not.toBeNull();
+      if (width < 900) {
+        expect(inspectorBox!.y).toBeGreaterThanOrEqual(canvasBox!.y + canvasBox!.height - 1);
+      } else {
+        expect(inspectorBox!.x).toBeGreaterThanOrEqual(canvasBox!.x + canvasBox!.width - 1);
+        expect(inspectorBox!.width).toBeGreaterThanOrEqual(350);
+        expect(inspectorBox!.width).toBeLessThanOrEqual(370);
+      }
+      const dialogOverflows = await dialog.evaluate((element) => element.scrollWidth > element.clientWidth);
+      expect(dialogOverflows).toBe(false);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
       expect(overflow).toBe(false);
+      await dialog.getByRole("button", { name: "关闭" }).click();
     }
   });
 });
