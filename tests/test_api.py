@@ -57,6 +57,61 @@ class PortalApiTests(unittest.TestCase):
         snapshot = self.api.get_snapshot("company-dev/sample-plugin")
         self.assertEqual(snapshot["plugin"]["id"], "sample-plugin")
 
+    def test_download_info_uses_the_active_public_identity_and_fails_closed(self) -> None:
+        probed: list[str] = []
+        api = PortalApi(
+            self.store,
+            download_probe=lambda url: probed.append(url) is None,
+        )
+        token = api.create_session()["token"]
+        preview = api.preview_import(
+            token,
+            {
+                "pluginRoot": str(self.plugin_root),
+                "target": "company-dev",
+                "expectedPluginId": "sample-plugin",
+                "approvedRulePaths": ["rules/public.md"],
+                "extensionTools": [],
+            },
+        )
+        api.promote(
+            token,
+            "company-dev/sample-plugin",
+            {"candidateId": preview["candidateId"], "expectedRevision": 0},
+        )
+
+        self.assertEqual(
+            api.get_download_info("company-dev/sample-plugin"),
+            {
+                "available": True,
+                "version": "1.2.3",
+                "href": "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+            },
+        )
+        self.assertEqual(
+            probed,
+            ["http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip"],
+        )
+
+        unavailable = PortalApi(self.store, download_probe=lambda _url: False)
+        self.assertEqual(
+            unavailable.get_download_info("company-dev/sample-plugin"),
+            {"available": False, "version": "1.2.3", "href": None},
+        )
+
+    def test_plugin_icon_uses_a_generic_image_when_the_plugin_has_no_public_logo(self) -> None:
+        preview = self.preview()
+        self.api.promote(
+            self.token,
+            "company-dev/sample-plugin",
+            {"candidateId": preview["candidateId"], "expectedRevision": 0},
+        )
+
+        content_type, payload = self.api.get_plugin_icon("company-dev/sample-plugin")
+
+        self.assertEqual(content_type, "image/svg+xml")
+        self.assertIn(b"<svg", payload)
+
     def test_refresh_and_rollback_are_revision_guarded(self) -> None:
         first = self.preview()
         self.api.promote(

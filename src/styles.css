@@ -53,8 +53,31 @@ a {
 }
 
 .portal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 700;
   text-decoration: none;
+}
+
+.portal-brand-image,
+.portal-brand-fallback {
+  flex: 0 0 auto;
+}
+
+.portal-brand-image {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.portal-brand-fallback {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border: 1px solid #394450;
+  border-radius: 8px;
 }
 
 .portal-brand:focus-visible,
@@ -87,6 +110,9 @@ button {
 }
 
 .portal-sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
   color: #a8b0bb;
@@ -115,6 +141,34 @@ button {
 .portal-header h1 {
   margin: 0;
   font-size: 22px;
+}
+
+.portal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portal-download-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid #394450;
+  border-radius: 8px;
+  color: #f4f4f5;
+  background: transparent;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.portal-download-action:hover {
+  border-color: #566576;
+}
+
+.portal-download-action:disabled {
+  color: #7f8995;
+  cursor: not-allowed;
 }
 
 .header-actions {

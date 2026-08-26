@@ -21,6 +21,7 @@ def main() -> None:
         test_only=True,
         directory_picker=lambda: arguments.picker_root,
     )
+    server.api.download_probe = lambda url: "project-delivery-hub" in url
     print(json.dumps({"port": server.server_address[1]}), flush=True)
     try:
         server.serve_forever()

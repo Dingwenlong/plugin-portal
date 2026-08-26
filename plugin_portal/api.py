@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import http.client
+import os
+import re
 import secrets
+import stat
 import threading
 from collections.abc import Callable
 from copy import deepcopy
@@ -9,7 +13,7 @@ from typing import Any
 
 from .models import ModelValidationError, parse_plugin_key
 from .directory_picker import choose_plugin_directory
-from .plugin_reader import PluginReadError, preview_plugin
+from .plugin_reader import PluginReadError, preview_plugin, read_plugin_icon
 from .prompts import PromptRepository, PromptValidationError
 from .storage import PortalStore, RevisionConflict, StorageError
 from .workflows import WorkflowRepository, WorkflowValidationError
@@ -22,16 +26,26 @@ class ApiError(RuntimeError):
         self.code = code
 
 
+_DOWNLOAD_BASE_URL = "http://127.0.0.1:9134/downloads/"
+_SAFE_VERSION = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,63})$")
+_REPARSE_POINT = 0x400
+_GENERIC_PLUGIN_ICON = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9fb3c8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>"""
+
+
 class PortalApi:
     def __init__(
         self,
         store: PortalStore,
         directory_picker: Callable[[], Path | None] = choose_plugin_directory,
+        download_probe: Callable[[str], bool] | None = None,
+        plugin_cache_root: Path | str | None = None,
     ):
         self.store = store
         self.directory_picker = directory_picker
         self.prompts = PromptRepository(store)
         self.workflows = WorkflowRepository(store)
+        self.download_probe = download_probe or _probe_local_download
+        self.plugin_cache_root = Path(plugin_cache_root) if plugin_cache_root is not None else _default_plugin_cache_root()
         self._sessions: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = threading.RLock()
 
@@ -176,6 +190,37 @@ class PortalApi:
         except StorageError:
             raise ApiError("活动插件快照不可用", status=500, code="snapshot_unavailable") from None
 
+    def get_download_info(self, plugin_key: str) -> dict[str, Any]:
+        target, plugin_id = self._plugin_identity(plugin_key)
+        snapshot = self.get_snapshot(plugin_key)
+        plugin = snapshot.get("plugin")
+        if not isinstance(plugin, dict) or plugin.get("target") != target or plugin.get("id") != plugin_id:
+            raise ApiError("活动插件身份无效", status=500, code="snapshot_invalid")
+        version = plugin.get("version")
+        if not isinstance(version, str) or not _SAFE_VERSION.fullmatch(version):
+            raise ApiError("活动插件版本无效", status=500, code="snapshot_invalid")
+        href = f"{_DOWNLOAD_BASE_URL}{plugin_id}-{version}-{target}.zip"
+        try:
+            available = self.download_probe(href) is True
+        except Exception:
+            available = False
+        return {"available": available, "version": version, "href": href if available else None}
+
+    def get_plugin_icon(self, plugin_key: str) -> tuple[str, bytes]:
+        target, plugin_id = self._plugin_identity(plugin_key)
+        snapshot = self.get_snapshot(plugin_key)
+        plugin = snapshot.get("plugin")
+        if not isinstance(plugin, dict) or plugin.get("target") != target or plugin.get("id") != plugin_id:
+            raise ApiError("活动插件身份无效", status=500, code="snapshot_invalid")
+        version = plugin.get("version")
+        if not isinstance(version, str) or not _SAFE_VERSION.fullmatch(version):
+            raise ApiError("活动插件版本无效", status=500, code="snapshot_invalid")
+        try:
+            root = self._installed_plugin_root(target, plugin_id, version)
+            return read_plugin_icon(root)
+        except (ApiError, PluginReadError):
+            return "image/svg+xml", _GENERIC_PLUGIN_ICON
+
     def get_prompts(self, plugin_key: str) -> dict[str, Any]:
         self._require_plugin_key(plugin_key)
         try:
@@ -260,7 +305,66 @@ class PortalApi:
             raise ApiError("插件身份无效") from None
 
     @staticmethod
+    def _plugin_identity(plugin_key: str) -> tuple[str, str]:
+        try:
+            return parse_plugin_key(plugin_key)
+        except ModelValidationError:
+            raise ApiError("插件身份无效") from None
+
+    def _installed_plugin_root(self, target: str, plugin_id: str, version: str) -> Path:
+        candidate = self.plugin_cache_root.expanduser().absolute()
+        try:
+            for part in (None, target, plugin_id, version):
+                if part is not None:
+                    candidate = candidate / part
+                info = os.lstat(candidate)
+                if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or bool(
+                    getattr(info, "st_file_attributes", 0) & _REPARSE_POINT
+                ):
+                    raise OSError
+        except OSError:
+            raise ApiError("该插件未提供公开图标", status=404, code="icon_not_found") from None
+        return candidate
+
+    @staticmethod
     def _revision(value: object) -> int:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ApiError("expectedRevision 无效")
         return value
+
+
+def _default_plugin_cache_root() -> Path:
+    codex_home = os.environ.get("CODEX_HOME")
+    return (Path(codex_home) if codex_home else Path.home() / ".codex") / "plugins" / "cache"
+
+
+def _probe_local_download(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.port != 9134
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/downloads/")
+        or not parsed.path.endswith(".zip")
+    ):
+        return False
+    connection = http.client.HTTPConnection("127.0.0.1", 9134, timeout=1.5)
+    try:
+        connection.request("HEAD", parsed.path, headers={"Accept": "application/zip"})
+        response = connection.getresponse()
+        content_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
+        content_length = response.getheader("Content-Length", "")
+        return response.status == 200 and content_type in {
+            "application/zip",
+            "application/x-zip-compressed",
+        } and content_length.isdigit() and int(content_length) > 0
+    except OSError:
+        return False
+    finally:
+        connection.close()

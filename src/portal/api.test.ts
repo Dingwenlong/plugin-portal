@@ -82,4 +82,25 @@ describe("PortalClient", () => {
 
     await expect(client.selectPluginDirectory()).rejects.toThrow("插件目录选择回应无效");
   });
+
+  it("accepts only a closed download availability response", async () => {
+    const client = new PortalClient(async () => Response.json({
+      available: true,
+      version: "3.7.17",
+      href: "http://127.0.0.1:9134/downloads/project-delivery-hub-3.7.17-company-dev.zip",
+    }));
+
+    await expect(client.getDownloadInfo("company-dev/project-delivery-hub")).resolves.toEqual({
+      available: true,
+      version: "3.7.17",
+      href: "http://127.0.0.1:9134/downloads/project-delivery-hub-3.7.17-company-dev.zip",
+    });
+
+    const invalid = new PortalClient(async () => Response.json({
+      available: false,
+      version: "3.7.17",
+      href: "http://127.0.0.1:9134/downloads/missing.zip",
+    }));
+    await expect(invalid.getDownloadInfo("company-dev/project-delivery-hub")).rejects.toThrow("下载资料回应无效");
+  });
 });

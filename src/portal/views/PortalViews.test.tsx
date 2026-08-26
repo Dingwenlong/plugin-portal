@@ -49,14 +49,16 @@ describe("snapshot views", () => {
     expect(screen.getByText("查看测试结果。")).toBeInTheDocument();
   });
 
-  it("falls back to the Chinese public description when a migrated skill name equals its ID", () => {
+  it("never substitutes the purpose for a missing Chinese skill name", () => {
     const migrated = {
       ...snapshot,
       skills: [{ id: "code-development", name: "code-development", description: "业务代码开发与修复。" }],
     };
 
     const { container } = render(<SkillsView snapshot={migrated} />);
-    expect(container.querySelector("td small")).toHaveTextContent("业务代码开发与修复。");
+    expect(container.querySelector("td small")).toBeNull();
+    expect(screen.getByText("业务代码开发与修复。")).toBeInTheDocument();
+    expect(screen.getAllByText("业务代码开发与修复。")).toHaveLength(1);
   });
 
   it("renders approved Markdown as safe elements rather than HTML", () => {

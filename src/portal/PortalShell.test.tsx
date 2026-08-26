@@ -41,6 +41,13 @@ function createClient(): PortalDataClient {
         importedAt: "2026-08-25T00:00:00Z",
       },
     }),
+    getDownloadInfo: async (pluginKey) => ({
+      available: pluginKey.endsWith("project-delivery-hub"),
+      version: plugins.find((item) => item.pluginKey === pluginKey)!.version,
+      href: pluginKey.endsWith("project-delivery-hub")
+        ? "http://127.0.0.1:9134/downloads/project-delivery-hub-3.7.17-company-dev.zip"
+        : null,
+    }),
     getPrompts: async (pluginKey) => ({
       revision: 1,
       pluginKey,
@@ -135,10 +142,64 @@ describe("PortalShell", () => {
   it("opens workflow configuration as a dialog from the overview only", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
     const trigger = await screen.findByRole("button", { name: "配置流程" });
-    expect(trigger).toHaveClass("portal-page-action");
+    expect(trigger.closest(".portal-header-actions")).not.toBeNull();
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("restores the plugin brand, navigation icons and overview download action", async () => {
+    const { container } = render(
+      <PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />,
+    );
+
+    const brand = await screen.findByRole("link", { name: "研发助手插件" });
+    const brandImage = brand.querySelector("img");
+    expect(brandImage).not.toBeNull();
+    fireEvent.error(brandImage!);
+    expect(brand.querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Skills" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Prompts" }).querySelector("svg")).not.toBeNull();
+    expect(container.querySelectorAll("nav[aria-label='插件内容'] svg")).toHaveLength(6);
+    expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+  });
+
+  it("keeps a delayed download probe after the main plugin content renders", async () => {
+    let resolveDownload!: (value: {
+      available: boolean;
+      version: string;
+      href: string | null;
+    }) => void;
+    const client = {
+      ...createClient(),
+      getDownloadInfo: () => new Promise((resolve) => { resolveDownload = resolve; }),
+    } satisfies PortalDataClient;
+
+    render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/overview" />);
+
+    expect(await screen.findByRole("button", { name: "下载最新版 v3.7.17" })).toBeDisabled();
+    resolveDownload({
+      available: true,
+      version: "3.7.17",
+      href: "http://127.0.0.1:9134/downloads/project-delivery-hub-3.7.17-company-dev.zip",
+    });
+
+    expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+  });
+
+  it("shows the same verified download action on releases", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/releases" />);
+
+    expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+  });
+
+  it("does not expose a broken download link when the formal package is unavailable", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/yusheng-inc/releases" />);
+
+    const unavailable = await screen.findByRole("button", { name: "下载最新版 v1.1.4" });
+    expect(unavailable).toBeDisabled();
+    expect(unavailable).toHaveAttribute("title", "该插件未提供可下载版本");
+    expect(screen.queryByRole("link", { name: "下载最新版 v1.1.4" })).not.toBeInTheDocument();
   });
 });

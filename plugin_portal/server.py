@@ -66,6 +66,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
     _PROMOTE = re.compile(r"^/api/plugins/([^/]+)/promote$")
     _ROLLBACK = re.compile(r"^/api/plugins/([^/]+)/rollback$")
     _SNAPSHOT = re.compile(r"^/api/plugins/([^/]+)/snapshot$")
+    _ICON = re.compile(r"^/api/plugins/([^/]+)/icon$")
+    _DOWNLOAD_INFO = re.compile(r"^/api/plugins/([^/]+)/download-info$")
     _PROMPTS = re.compile(r"^/api/plugins/([^/]+)/prompts$")
     _WORKFLOWS = re.compile(r"^/api/plugins/([^/]+)/workflows$")
 
@@ -80,6 +82,19 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         match = self._SNAPSHOT.fullmatch(path)
         if match:
             self._call_api(lambda: self.server.api.get_snapshot(unquote(match.group(1))))
+            return
+        match = self._ICON.fullmatch(path)
+        if match:
+            try:
+                content_type, payload = self.server.api.get_plugin_icon(unquote(match.group(1)))
+            except ApiError as error:
+                self._send_api_error(error)
+                return
+            self._send_bytes(HTTPStatus.OK, payload, content_type)
+            return
+        match = self._DOWNLOAD_INFO.fullmatch(path)
+        if match:
+            self._call_api(lambda: self.server.api.get_download_info(unquote(match.group(1))))
             return
         for pattern, operation in (
             (self._PROMPTS, self.server.api.get_prompts),
@@ -198,6 +213,15 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_bytes(self, status: int | HTTPStatus, payload: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(payload)
 

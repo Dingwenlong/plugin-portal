@@ -27,6 +27,12 @@ _REPARSE_POINT = 0x400
 _MAX_PUBLIC_FILE_BYTES = 2 * 1024 * 1024
 _TOOL_FIELDS = {"id", "name", "purpose", "url"}
 _MARKDOWN_H1 = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+_ICON_TYPES = {
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
 
 
 def preview_plugin(
@@ -199,7 +205,11 @@ def _read_skills(root: Path) -> list[dict[str, str]]:
         front_matter = _front_matter(markdown)
         try:
             skill_id = _identifier(front_matter.get("name"), "Skill ID")
-            skill_name = require_public_text(_skill_title(markdown), "Skill 名称", single_line=True)
+            skill_name = require_public_text(
+                _skill_display_name(root, directory_name, markdown),
+                "Skill 名称",
+                single_line=True,
+            )
             description = require_public_text(front_matter.get("description"), "Skill 说明")
         except PublicTextError as error:
             raise PluginReadError(str(error)) from error
@@ -214,6 +224,72 @@ def _skill_title(markdown: str) -> str:
     if match is None:
         raise PluginReadError("Skill 缺少公开名称")
     return match.group(1)
+
+
+def _skill_display_name(root: Path, directory_name: str, markdown: str) -> str:
+    relative = f"skills/{directory_name}/skill.contract.json"
+    try:
+        os.lstat(root / "skills" / directory_name / "skill.contract.json")
+    except FileNotFoundError:
+        return _skill_title(markdown)
+    except OSError as error:
+        raise PluginReadError("无法读取 Skill 公开合约") from error
+    contract = _read_json(root, relative)
+    portal = contract.get("portal")
+    if portal is None:
+        return _skill_title(markdown)
+    if not isinstance(portal, dict):
+        raise PluginReadError("Skill 公开合约无效")
+    display_name = portal.get("displayName")
+    return _skill_title(markdown) if display_name is None else display_name
+
+
+def read_plugin_icon(plugin_root: Path | str) -> tuple[str, bytes]:
+    root = _validated_root(Path(plugin_root))
+    manifest = _read_json(root, ".codex-plugin/plugin.json")
+    interface = manifest.get("interface")
+    if not isinstance(interface, dict) or not isinstance(interface.get("logo"), str):
+        raise PluginReadError("插件未提供公开图标")
+    relative = _safe_relative_path(interface["logo"])
+    content_type = _ICON_TYPES.get(relative.suffix.lower())
+    if content_type is None:
+        raise PluginReadError("插件图标文件类型不允许")
+    return content_type, _read_public_bytes(root, relative)
+
+
+def _read_public_bytes(root: Path, relative: PurePosixPath) -> bytes:
+    candidate = root
+    try:
+        for part in relative.parts:
+            candidate = candidate / part
+            info = os.lstat(candidate)
+            if _is_link_or_reparse(info):
+                raise PluginReadError("插件路径包含链接或 reparse point")
+        if not stat.S_ISREG(info.st_mode):
+            raise PluginReadError("插件路径不是一般文件")
+        if info.st_size > _MAX_PUBLIC_FILE_BYTES:
+            raise PluginReadError("插件公开文件过大")
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(candidate, flags)
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise PluginReadError("插件文件在读取期间发生变化")
+            payload = bytearray()
+            while True:
+                block = os.read(descriptor, min(65536, _MAX_PUBLIC_FILE_BYTES + 1 - len(payload)))
+                if not block:
+                    break
+                payload.extend(block)
+                if len(payload) > _MAX_PUBLIC_FILE_BYTES:
+                    raise PluginReadError("插件公开文件过大")
+        finally:
+            os.close(descriptor)
+    except PluginReadError:
+        raise
+    except OSError as error:
+        raise PluginReadError("无法安全读取插件文件") from error
+    return bytes(payload)
 
 
 def _front_matter(markdown: str) -> dict[str, str]:

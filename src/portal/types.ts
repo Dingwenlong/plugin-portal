@@ -11,6 +11,12 @@ export interface PluginCatalog {
   items: PluginListItem[];
 }
 
+export interface PluginDownloadInfo {
+  available: boolean;
+  version: string;
+  href: string | null;
+}
+
 export interface SkillSummary {
   id: string;
   name: string;

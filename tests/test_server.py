@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 import threading
 import unittest
@@ -165,6 +166,52 @@ class PortalServerTests(unittest.TestCase):
             self.assertEqual(json.load(response)["revision"], 1)
         with self.request(f"/api/plugins/{encoded_key}/workflows") as response:
             self.assertEqual(json.load(response)["tabs"], [])
+
+    def test_serves_only_the_active_installed_plugin_icon_and_download_metadata(self) -> None:
+        source = Path(__file__).parent / "fixtures" / "plugins" / "minimal"
+        cache_root = self.root / "cache"
+        installed = cache_root / "company-dev" / "sample-plugin" / "1.2.3"
+        shutil.copytree(source, installed)
+        icon_payload = b"\x89PNG\r\n\x1a\nfixture"
+        (installed / "assets").mkdir()
+        (installed / "assets" / "logo.png").write_bytes(icon_payload)
+        manifest_path = installed / ".codex-plugin" / "plugin.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["interface"]["logo"] = "./assets/logo.png"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        self.server.api.plugin_cache_root = cache_root
+        self.server.api.download_probe = lambda _url: True
+
+        token = self.server.api.create_session()["token"]
+        candidate = self.server.api.preview_import(
+            token,
+            {
+                "pluginRoot": str(source),
+                "target": "company-dev",
+                "expectedPluginId": "sample-plugin",
+                "approvedRulePaths": ["rules/public.md"],
+                "extensionTools": [],
+            },
+        )
+        self.server.api.promote(
+            token,
+            "company-dev/sample-plugin",
+            {"candidateId": candidate["candidateId"], "expectedRevision": 0},
+        )
+        encoded_key = "company-dev%2Fsample-plugin"
+
+        with self.request(f"/api/plugins/{encoded_key}/icon") as response:
+            self.assertEqual(response.headers.get_content_type(), "image/png")
+            self.assertEqual(response.read(), icon_payload)
+        with self.request(f"/api/plugins/{encoded_key}/download-info") as response:
+            self.assertEqual(
+                json.load(response),
+                {
+                    "available": True,
+                    "version": "1.2.3",
+                    "href": "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+                },
+            )
 
 
 if __name__ == "__main__":

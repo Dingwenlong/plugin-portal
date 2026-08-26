@@ -1,6 +1,7 @@
 import type {
   PluginCatalog,
   PluginDirectorySelection,
+  PluginDownloadInfo,
   PluginImportCandidate,
   PluginImportConfig,
   PluginMutationReceipt,
@@ -28,6 +29,21 @@ export class PortalClient {
     const value = await this.request(this.pluginUrl(pluginKey, "snapshot"));
     if (!isPluginSnapshot(value)) throw new Error("插件公开资料回应无效");
     return value;
+  }
+
+  async getDownloadInfo(pluginKey: string): Promise<PluginDownloadInfo> {
+    const value = await this.request(this.pluginUrl(pluginKey, "download-info"));
+    if (
+      !isClosedRecord(value, ["available", "version", "href"]) ||
+      typeof value.available !== "boolean" ||
+      !isText(value.version) ||
+      (value.available
+        ? !isLocalZipUrl(value.href)
+        : value.href !== null)
+    ) {
+      throw new Error("下载资料回应无效");
+    }
+    return value as unknown as PluginDownloadInfo;
   }
 
   async previewImport(config: PluginImportConfig): Promise<PluginImportCandidate> {
@@ -279,4 +295,24 @@ function isRevision(value: unknown): value is number {
 
 function isText(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function isLocalZipUrl(value: unknown): value is string {
+  if (!isText(value)) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "http:" &&
+      url.hostname === "127.0.0.1" &&
+      url.port === "9134" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      url.pathname.startsWith("/downloads/") &&
+      url.pathname.endsWith(".zip")
+    );
+  } catch {
+    return false;
+  }
 }

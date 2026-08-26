@@ -10,7 +10,7 @@ export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
     <ContentTable headings={["名称", "用途"]}>
       {snapshot.skills.map((skill) => (
         <tr key={skill.id}>
-          <td><strong>{skill.id}</strong><small>{skill.name === skill.id ? skill.description : skill.name}</small></td>
+          <td><strong>{skill.id}</strong>{skill.name === skill.id ? null : <small>{skill.name}</small>}</td>
           <td>{skill.description}</td>
         </tr>
       ))}

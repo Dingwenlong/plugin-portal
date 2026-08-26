@@ -67,6 +67,23 @@ class PluginReaderTests(unittest.TestCase):
         for private_value in ("command", "args", "env", str(self.plugin_root)):
             self.assertNotIn(private_value, serialized)
 
+    def test_prefers_the_skill_contract_public_display_name_over_the_markdown_heading(self) -> None:
+        contract_path = self.plugin_root / "skills" / "sample-skill" / "skill.contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "identity": {"id": "sample-skill", "name": "sample-skill"},
+                    "portal": {"displayName": "合约中文名称"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        snapshot = self.preview()
+
+        self.assertEqual(snapshot["skills"][0]["name"], "合约中文名称")
+
     def test_normalizes_public_markdown_newlines(self) -> None:
         rule = self.plugin_root / "rules" / "public.md"
         rule.write_bytes("# 公开规范\r\n\r\n只展示公开正文。\r\n".encode("utf-8"))

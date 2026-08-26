@@ -112,6 +112,12 @@ test.describe.serial("Plugin Portal", () => {
     );
 
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+    await expect(page.locator("nav[aria-label='插件内容'] svg")).toHaveCount(6);
+    await expect(page.getByRole("link", { name: "研发助手插件" }).locator("img, svg")).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "下载最新版 v3.7.19" })).toHaveAttribute(
+      "href",
+      "http://127.0.0.1:9134/downloads/project-delivery-hub-3.7.19-company-dev.zip",
+    );
     await expect(page.getByRole("tab", { name: "插件安装" })).toBeVisible();
     await expect(page.getByText("取得插件包")).toBeVisible();
     await expect(page.getByRole("link", { name: "鸟瞰全景" })).toHaveCount(0);
@@ -157,6 +163,9 @@ test.describe.serial("Plugin Portal", () => {
     await expect(workflowAction).toBeFocused();
     await page.goto(`${portal.baseUrl}/#/plugins/yusheng-inc/overview`);
     await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
+    await expect(page.getByRole("button", { name: "下载最新版 v1.1.4" })).toBeDisabled();
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/releases`);
+    await expect(page.getByRole("link", { name: "下载最新版 v3.7.19" })).toBeVisible();
     expect(consoleErrors).toEqual([]);
   });
 
