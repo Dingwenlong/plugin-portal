@@ -26,6 +26,7 @@ _IDENTIFIER = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _REPARSE_POINT = 0x400
 _MAX_PUBLIC_FILE_BYTES = 2 * 1024 * 1024
 _TOOL_FIELDS = {"id", "name", "purpose", "url"}
+_MCP_PUBLIC_FIELDS = {"name", "purpose", "capabilities", "writeEnabled"}
 _MARKDOWN_H1 = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 _CJK_TEXT = re.compile(r"[\u3400-\u9fff]")
 _ICON_TYPES = {
@@ -204,10 +205,11 @@ def _read_skills(root: Path) -> list[dict[str, str]]:
         _identifier(directory_name, "Skill 目录")
         markdown = _read_public_file(root, f"skills/{directory_name}/SKILL.md", suffix=".md")
         front_matter = _front_matter(markdown)
+        public_metadata = _skill_public_metadata(root, directory_name, markdown)
         try:
             skill_id = _identifier(front_matter.get("name"), "Skill ID")
             skill_name = require_public_text(
-                _skill_display_name(root, directory_name, markdown),
+                public_metadata["name"],
                 "Skill 名称",
                 single_line=True,
             )
@@ -216,7 +218,10 @@ def _read_skills(root: Path) -> list[dict[str, str]]:
             raise PluginReadError(str(error)) from error
         if skill_id != directory_name:
             raise PluginReadError("Skill 身份与目录不一致")
-        projected.append({"id": skill_id, "name": skill_name, "description": description})
+        skill = {"id": skill_id, "name": skill_name, "description": description}
+        if "category" in public_metadata:
+            skill["category"] = public_metadata["category"]
+        projected.append(skill)
     return projected
 
 
@@ -227,26 +232,28 @@ def _skill_title(markdown: str) -> str:
     return match.group(1)
 
 
-def _skill_display_name(root: Path, directory_name: str, markdown: str) -> str:
+def _skill_public_metadata(root: Path, directory_name: str, markdown: str) -> dict[str, str]:
     relative = f"skills/{directory_name}/skill.contract.json"
     try:
         os.lstat(root / "skills" / directory_name / "skill.contract.json")
     except FileNotFoundError:
-        return _skill_title(markdown)
+        return {"name": _skill_title(markdown)}
     except OSError as error:
         raise PluginReadError("无法读取 Skill 公开合约") from error
     contract = _read_json(root, relative)
     portal = contract.get("portal")
     if portal is None:
-        return _skill_title(markdown)
+        return {"name": _skill_title(markdown)}
     if not isinstance(portal, dict):
         raise PluginReadError("Skill 公开合约无效")
     display_name = portal.get("displayName")
-    if display_name is None:
-        return _skill_title(markdown)
-    if not isinstance(display_name, str):
+    if display_name is not None and not isinstance(display_name, str):
         raise PluginReadError("Skill 公开合约名称无效")
-    return display_name if _CJK_TEXT.search(display_name) else _skill_title(markdown)
+    name = display_name if display_name is not None and _CJK_TEXT.search(display_name) else _skill_title(markdown)
+    category = portal.get("category")
+    if category is None:
+        return {"name": name}
+    return {"name": name, "category": _identifier(category, "Skill 类别")}
 
 
 def read_plugin_icon(plugin_root: Path | str) -> tuple[str, bytes]:
@@ -316,14 +323,63 @@ def _front_matter(markdown: str) -> dict[str, str]:
     raise PluginReadError("Skill front matter 未结束")
 
 
-def _read_mcp(root: Path) -> list[dict[str, str]]:
+def _read_mcp(root: Path) -> list[dict[str, Any]]:
     path = root / ".mcp.json"
     if not path.exists():
+        if (root / ".mcp.public.json").exists():
+            raise PluginReadError("MCP 公开说明引用未知服务")
         return []
     value = _read_json(root, ".mcp.json")
     if set(value) != {"mcpServers"} or not isinstance(value["mcpServers"], dict):
         raise PluginReadError("MCP 公开结构无效")
-    return [{"id": _identifier(server_id, "MCP 服务 ID")} for server_id in sorted(value["mcpServers"])]
+    server_ids = [_identifier(server_id, "MCP 服务 ID") for server_id in sorted(value["mcpServers"])]
+    public_metadata = _read_mcp_public_metadata(root, set(server_ids))
+    return [
+        {"id": server_id, **public_metadata[server_id]}
+        if server_id in public_metadata
+        else {"id": server_id}
+        for server_id in server_ids
+    ]
+
+
+def _read_mcp_public_metadata(root: Path, server_ids: set[str]) -> dict[str, dict[str, Any]]:
+    path = root / ".mcp.public.json"
+    if not path.exists():
+        return {}
+    value = _read_json(root, ".mcp.public.json")
+    if set(value) != {"mcpServers"} or not isinstance(value["mcpServers"], dict):
+        raise PluginReadError("MCP 公开说明结构无效")
+
+    projected: dict[str, dict[str, Any]] = {}
+    for raw_server_id, metadata in value["mcpServers"].items():
+        server_id = _identifier(raw_server_id, "MCP 公开说明服务 ID")
+        if server_id not in server_ids:
+            raise PluginReadError("MCP 公开说明引用未知服务")
+        if not isinstance(metadata, dict) or set(metadata) != _MCP_PUBLIC_FIELDS:
+            raise PluginReadError("MCP 公开说明结构无效")
+        capabilities = metadata["capabilities"]
+        if (
+            not isinstance(capabilities, list)
+            or not capabilities
+            or not isinstance(metadata["writeEnabled"], bool)
+        ):
+            raise PluginReadError("MCP 公开说明结构无效")
+        try:
+            public_capabilities = [
+                require_public_text(capability, "MCP 能力", single_line=True)
+                for capability in capabilities
+            ]
+            if len(set(public_capabilities)) != len(public_capabilities):
+                raise PluginReadError("MCP 能力重复")
+            projected[server_id] = {
+                "name": require_public_text(metadata["name"], "MCP 名称", single_line=True),
+                "purpose": require_public_text(metadata["purpose"], "MCP 用途"),
+                "capabilities": public_capabilities,
+                "writeEnabled": metadata["writeEnabled"],
+            }
+        except PublicTextError as error:
+            raise PluginReadError(str(error)) from error
+    return projected
 
 
 def _validate_extension_tools(tools: list[dict[str, Any]]) -> list[dict[str, str]]:

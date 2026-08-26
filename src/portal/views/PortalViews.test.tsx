@@ -49,6 +49,40 @@ describe("snapshot views", () => {
     expect(screen.getByText("查看测试结果。")).toBeInTheDocument();
   });
 
+  it("renders optional MCP public metadata and preserves the ID-only fallback", () => {
+    const enriched = {
+      ...snapshot,
+      mcp: [
+        { id: "legacy-service" },
+        {
+          id: "sample-service",
+          name: "示例服务",
+          purpose: "查询经过筛选的公开资料。",
+          capabilities: ["查询公开资料", "读取处理状态"],
+          writeEnabled: false,
+        },
+        {
+          id: "write-service",
+          name: "变更服务",
+          purpose: "提交经过确认的状态变更。",
+          capabilities: ["更新处理状态"],
+          writeEnabled: true,
+        },
+      ],
+    };
+
+    render(<McpView snapshot={enriched} />);
+
+    expect(screen.getByText("legacy-service")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "示例服务" })).toBeInTheDocument();
+    expect(screen.getByText("sample-service")).toBeInTheDocument();
+    expect(screen.getByText("查询经过筛选的公开资料。")).toBeInTheDocument();
+    expect(screen.getByText("查询公开资料")).toBeInTheDocument();
+    expect(screen.getByText("读取处理状态")).toBeInTheDocument();
+    expect(screen.getByText("只读")).toBeInTheDocument();
+    expect(screen.getByText("包含写入操作")).toBeInTheDocument();
+  });
+
   it("never substitutes the purpose for a missing Chinese skill name", () => {
     const migrated = {
       ...snapshot,
@@ -84,6 +118,36 @@ describe("snapshot views", () => {
       "delivery-hub-navigator",
       "api-test-db-fixture-preparer",
     ]);
+  });
+
+  it("renders fixed category icons and a generic fallback for Skills", () => {
+    const categorized = {
+      ...snapshot,
+      skills: [
+        {
+          id: "code-development",
+          name: "业务代码开发",
+          description: "处理业务代码。",
+          category: "implementation",
+        },
+        {
+          id: "delivery-hub-navigator",
+          name: "先锋",
+          description: "选择交付路径。",
+          category: "navigator",
+        },
+        { id: "legacy-skill", name: "旧技能", description: "旧快照。" },
+      ],
+    };
+
+    const { container } = render(<SkillsView snapshot={categorized} />);
+    const rows = new Map(
+      Array.from(container.querySelectorAll("tbody tr"), (row) => [row.querySelector("strong")?.textContent, row]),
+    );
+
+    expect(rows.get("code-development")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-code");
+    expect(rows.get("delivery-hub-navigator")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-compass");
+    expect(rows.get("legacy-skill")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-sparkles");
   });
 
   it("shows an extension tool ID only when the public name is Chinese", () => {

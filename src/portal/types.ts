@@ -21,11 +21,18 @@ export interface SkillSummary {
   id: string;
   name: string;
   description: string;
+  category?: string;
 }
 
-export interface McpSummary {
-  id: string;
-}
+export type McpSummary =
+  | { id: string }
+  | {
+      id: string;
+      name: string;
+      purpose: string;
+      capabilities: string[];
+      writeEnabled: boolean;
+    };
 
 export interface ExtensionTool {
   id: string;

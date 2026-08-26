@@ -41,6 +41,7 @@ export async function startTestPortal(): Promise<TestPortal> {
   const pickerPluginRoot = join(pluginRoot, "picker-project-delivery-hub");
   cpSync(join(repositoryRoot, "tests", "fixtures", "plugins", "minimal"), pickerPluginRoot, { recursive: true });
   const pickerManifestPath = join(pickerPluginRoot, ".codex-plugin", "plugin.json");
+  const pickerSkillContractPath = join(pickerPluginRoot, "skills", "sample-skill", "skill.contract.json");
   const preparePickerPlugin = (version: string) => {
     const pickerManifest = JSON.parse(readFileSync(pickerManifestPath, "utf8")) as Record<string, unknown>;
     pickerManifest.name = "project-delivery-hub";
@@ -48,6 +49,10 @@ export async function startTestPortal(): Promise<TestPortal> {
     pickerManifest.description = "研发助手插件的公开说明。";
     pickerManifest.interface = { displayName: "研发助手插件", shortDescription: "研发助手插件的公开说明。" };
     writeFileSync(pickerManifestPath, `${JSON.stringify(pickerManifest, null, 2)}\n`, "utf8");
+    writeFileSync(pickerSkillContractPath, `${JSON.stringify({
+      identity: { id: "sample-skill", name: "sample-skill" },
+      portal: { displayName: "示例技能", category: "implementation" },
+    }, null, 2)}\n`, "utf8");
   };
   preparePickerPlugin("3.7.19");
 

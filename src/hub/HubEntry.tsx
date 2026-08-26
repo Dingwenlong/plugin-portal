@@ -108,7 +108,6 @@ function GenericHubView({
   const effectivePhase = route === "hub" && phase === "idle" ? "hub" : phase;
   const showHub = effectivePhase === "revealing" || effectivePhase === "hub";
   const showCover = effectivePhase !== "hub";
-  const entryStyle = { "--hub-entry-cover-scale": coverScale } as CSSProperties;
 
   return <div className="hub-entry-flow" data-hub-entry-phase={effectivePhase} data-reduced-motion={reducedMotion}>
     {showHub && <HubList
@@ -118,25 +117,66 @@ function GenericHubView({
       includeButtonRef={includeButtonRef}
       onInclude={onInclude}
     />}
-    {showCover && <main
+    {showCover && <HubCover
+      effectivePhase={effectivePhase}
+      coverScale={coverScale}
+      onStart={onStart}
+      onButtonAnimationEnd={onButtonAnimationEnd}
+      onCoverAnimationEnd={onCoverAnimationEnd}
+    />}
+  </div>;
+}
+
+function HubCover({
+  effectivePhase,
+  coverScale,
+  onStart,
+  onButtonAnimationEnd,
+  onCoverAnimationEnd,
+}: {
+  effectivePhase: EntryPhase;
+  coverScale: number;
+  onStart: () => void;
+  onButtonAnimationEnd?: (event: AnimationEvent<HTMLButtonElement>) => void;
+  onCoverAnimationEnd?: (event: AnimationEvent<HTMLElement>) => void;
+}) {
+  const [coverReady, setCoverReady] = useState(false);
+  const entryStyle = { "--hub-entry-cover-scale": coverScale } as CSSProperties;
+
+  return <main
       className="hub-cover hub-entry-cover-layer"
       data-hub-cover
       data-phase={effectivePhase}
       onAnimationEnd={onCoverAnimationEnd}
     >
       <h1 className="sr-only">Plugin Portal</h1>
-      <CoverAccretionBackground intensity={effectivePhase === "engulfing" ? "surge" : "ambient"} frozen={effectivePhase !== "idle"} />
+      <CoverAccretionBackground
+        intensity={effectivePhase === "engulfing" ? "surge" : "ambient"}
+        frozen={effectivePhase !== "idle"}
+        onReady={() => setCoverReady(true)}
+      />
+      <div
+        aria-hidden={coverReady}
+        aria-label="正在加载封面"
+        aria-live="polite"
+        className="hub-cover-loading"
+        data-cover-loading-overlay
+        data-ready={coverReady}
+        role="status"
+      >
+        <span aria-hidden="true" className="hub-cover-loading-spinner" />
+        <span>加载中</span>
+      </div>
       <CoverLiquidGlassButton
         className={`hub-entry-button is-${effectivePhase}`}
-        disabled={effectivePhase !== "idle"}
+        disabled={!coverReady || effectivePhase !== "idle"}
         style={entryStyle}
         onClick={onStart}
         onAnimationEnd={onButtonAnimationEnd}
       >
         <span data-hub-start-size={START_DIAMETER}>Start</span>
       </CoverLiquidGlassButton>
-    </main>}
-  </div>;
+    </main>;
 }
 
 function InteractiveHub({

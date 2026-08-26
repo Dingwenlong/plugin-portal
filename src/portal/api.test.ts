@@ -30,6 +30,111 @@ describe("PortalClient", () => {
     await expect(client.listPlugins()).rejects.toThrow("插件目录回应无效");
   });
 
+  it("accepts both ID-only and enriched MCP public summaries", async () => {
+    const client = new PortalClient(async () => Response.json({
+      schemaVersion: "1.0.0",
+      plugin: {
+        target: "company-dev",
+        id: "sample-plugin",
+        name: "示例插件",
+        version: "1.2.3",
+        summary: "公开说明",
+      },
+      skills: [],
+      mcp: [
+        { id: "legacy-service" },
+        {
+          id: "sample-service",
+          name: "示例服务",
+          purpose: "查询经过筛选的公开资料。",
+          capabilities: ["查询公开资料", "读取处理状态"],
+          writeEnabled: false,
+        },
+      ],
+      extensionTools: [],
+      engineeringRules: [],
+      provenance: {
+        packageDigest: `sha256:${"a".repeat(64)}`,
+        adapterVersion: "1.0.0",
+        importedAt: "2026-08-25T00:00:00Z",
+      },
+    }));
+
+    await expect(client.getSnapshot("company-dev/sample-plugin")).resolves.toMatchObject({
+      mcp: [
+        { id: "legacy-service" },
+        {
+          id: "sample-service",
+          name: "示例服务",
+          purpose: "查询经过筛选的公开资料。",
+          capabilities: ["查询公开资料", "读取处理状态"],
+          writeEnabled: false,
+        },
+      ],
+    });
+  });
+
+  it("rejects partial MCP public summaries", async () => {
+    const client = new PortalClient(async () => Response.json({
+      schemaVersion: "1.0.0",
+      plugin: {
+        target: "company-dev",
+        id: "sample-plugin",
+        name: "示例插件",
+        version: "1.2.3",
+        summary: "公开说明",
+      },
+      skills: [],
+      mcp: [{ id: "sample-service", name: "示例服务" }],
+      extensionTools: [],
+      engineeringRules: [],
+      provenance: {
+        packageDigest: `sha256:${"a".repeat(64)}`,
+        adapterVersion: "1.0.0",
+        importedAt: "2026-08-25T00:00:00Z",
+      },
+    }));
+
+    await expect(client.getSnapshot("company-dev/sample-plugin")).rejects.toThrow("插件公开资料回应无效");
+  });
+
+  it("accepts categorized Skills while preserving legacy snapshots", async () => {
+    const client = new PortalClient(async () => Response.json({
+      schemaVersion: "1.0.0",
+      plugin: {
+        target: "company-dev",
+        id: "sample-plugin",
+        name: "示例插件",
+        version: "1.2.3",
+        summary: "公开说明",
+      },
+      skills: [
+        { id: "legacy-skill", name: "旧技能", description: "旧快照仍可读取。" },
+        {
+          id: "code-development",
+          name: "业务代码开发",
+          description: "处理业务代码。",
+          category: "implementation",
+        },
+      ],
+      mcp: [],
+      extensionTools: [],
+      engineeringRules: [],
+      provenance: {
+        packageDigest: `sha256:${"a".repeat(64)}`,
+        adapterVersion: "1.0.0",
+        importedAt: "2026-08-25T00:00:00Z",
+      },
+    }));
+
+    await expect(client.getSnapshot("company-dev/sample-plugin")).resolves.toMatchObject({
+      skills: [
+        { id: "legacy-skill" },
+        { id: "code-development", category: "implementation" },
+      ],
+    });
+  });
+
   it("creates one session before a Prompt mutation", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const client = new PortalClient(async (input, init) => {

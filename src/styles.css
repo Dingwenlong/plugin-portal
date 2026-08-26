@@ -98,10 +98,14 @@ select:focus-visible {
 }
 
 .portal-brand:focus-visible .portal-brand-image,
-.portal-brand:focus-visible .portal-brand-fallback,
-.portal-sidebar nav a:focus-visible svg {
+.portal-brand:focus-visible .portal-brand-fallback {
   outline: 2px solid #c4d5e7;
   outline-offset: 3px;
+}
+
+.portal-sidebar nav a:focus-visible span {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .portal-download-action:focus-visible {
@@ -283,6 +287,72 @@ td small,
 .content-list article {
   padding: 16px 0;
   border-bottom: 1px solid #29313b;
+}
+
+.mcp-service-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.mcp-service h3,
+.mcp-service p {
+  margin: 0;
+}
+
+.mcp-service small {
+  display: block;
+  margin-top: 4px;
+  color: #7f8995;
+}
+
+.skill-name-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.skill-name-icon {
+  display: inline-grid;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #8fbce9;
+}
+
+.skill-name-copy {
+  min-width: 0;
+}
+
+.mcp-service-heading > span {
+  color: #9ca5b0;
+  white-space: nowrap;
+}
+
+.mcp-service p {
+  margin-top: 12px;
+}
+
+.mcp-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 12px 0 0;
+  padding: 0;
+  color: #9ca5b0;
+  list-style: none;
+}
+
+.mcp-capabilities li + li::before {
+  margin-right: 18px;
+  content: "·";
 }
 
 .rules-layout {
@@ -715,6 +785,46 @@ textarea {
   display: block;
   opacity: .82;
   filter: saturate(.86) brightness(1.02);
+}
+
+.hub-cover-loading {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  background: #000;
+  color: rgba(255, 255, 255, .82);
+  font-size: 13px;
+  letter-spacing: .08em;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 180ms ease, visibility 0s linear 180ms;
+}
+
+.hub-cover-loading[data-ready="true"] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.hub-cover-loading-spinner {
+  width: 30px;
+  height: 30px;
+  border: 2px solid rgba(255, 255, 255, .2);
+  border-top-color: rgba(255, 255, 255, .92);
+  border-radius: 50%;
+  animation: hub-cover-loading-spin 720ms linear infinite;
+}
+
+@keyframes hub-cover-loading-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-cover-loading { transition: none; }
+  .hub-cover-loading-spinner { animation: none; }
 }
 
 .portal-cover-enter {

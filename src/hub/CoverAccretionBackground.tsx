@@ -61,22 +61,35 @@ function createProgram(gl: WebGLRenderingContext) {
 export function CoverAccretionBackground({
   intensity = "ambient",
   frozen = false,
+  onReady,
 }: {
   intensity?: "ambient" | "surge";
   frozen?: boolean;
+  onReady?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const intensityRef = useRef(intensity);
   const frozenRef = useRef(frozen);
+  const onReadyRef = useRef(onReady);
   const controllerRef = useRef<AnimationController | null>(null);
   const [renderState, setRenderState] = useState<RenderState>("loading");
   const [animationState, setAnimationState] = useState<AnimationState>("running");
   intensityRef.current = intensity;
   frozenRef.current = frozen;
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    let disposed = false;
+    let readyNotified = false;
+    const publishReady = (state: Exclude<RenderState, "loading">) => {
+      if (disposed || readyNotified) return;
+      readyNotified = true;
+      setRenderState(state);
+      onReadyRef.current?.();
+    };
 
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     setAnimationState(motionQuery.matches ? "static" : "running");
@@ -88,7 +101,7 @@ export function CoverAccretionBackground({
       powerPreference: "low-power",
     });
     if (!gl) {
-      setRenderState("fallback");
+      publishReady("fallback");
       return;
     }
 
@@ -96,7 +109,7 @@ export function CoverAccretionBackground({
     try {
       program = createProgram(gl);
     } catch {
-      setRenderState("fallback");
+      publishReady("fallback");
       return;
     }
 
@@ -107,7 +120,7 @@ export function CoverAccretionBackground({
     if (!positionBuffer || positionLocation < 0 || !viewportLocation || !clockLocation) {
       if (positionBuffer) gl.deleteBuffer(positionBuffer);
       gl.deleteProgram(program);
-      setRenderState("fallback");
+      publishReady("fallback");
       return;
     }
 
@@ -122,7 +135,6 @@ export function CoverAccretionBackground({
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
     let animationFrame = 0;
-    let disposed = false;
     let renderedFrames = 0;
     let lastClockSeconds = 0;
     let lastRenderedAt = Number.NEGATIVE_INFINITY;
@@ -145,6 +157,7 @@ export function CoverAccretionBackground({
       if (countFrame) renderedFrames += 1;
       canvas.dataset.renderedFrame = String(renderedFrames);
       canvas.dataset.renderedClock = seconds.toFixed(6);
+      publishReady("ready");
     };
 
     const animate = (time: number) => {
@@ -178,7 +191,6 @@ export function CoverAccretionBackground({
     };
     const handleMotionChange = () => start();
 
-    setRenderState("ready");
     controllerRef.current = { setFrozen: () => start() };
     start();
     window.addEventListener("resize", handleResize);

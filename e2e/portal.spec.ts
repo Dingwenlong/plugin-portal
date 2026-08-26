@@ -21,8 +21,14 @@ test.describe.serial("Plugin Portal", () => {
     });
     await page.goto(`${portal.baseUrl}/#/`);
     await expect(page.locator(".hub-cover")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start" })).toBeVisible();
+    const startButton = page.getByRole("button", { name: "Start" });
+    const loadingOverlay = page.locator("[data-cover-loading-overlay]");
+    await expect(startButton).toBeVisible();
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "ready");
+    await expect.poll(async () => page.locator("[data-cover-accretion-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
+    await expect(loadingOverlay).toHaveAttribute("data-ready", "true");
+    await expect(loadingOverlay).toHaveCSS("visibility", "hidden");
+    await expect(startButton).toBeEnabled();
     await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
     const buttonFrameBefore = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
     await page.waitForTimeout(1_500);
@@ -33,7 +39,7 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
 
     const transitionStartedAt = Date.now();
-    await page.getByRole("button", { name: "Start" }).click();
+    await startButton.click();
     await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
     await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible({ timeout: 3_000 });
     await expect(page.getByRole("button", { name: /^管理 / })).toHaveCount(0);
@@ -59,7 +65,34 @@ test.describe.serial("Plugin Portal", () => {
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
     await expect(page.getByText("示例技能", { exact: true })).toBeVisible();
     await expect(page.getByText("sample-skill", { exact: true })).toBeVisible();
+    const skillIcon = page.getByRole("row", { name: /sample-skill/ }).locator(".skill-name-icon");
+    await expect(skillIcon.locator("svg")).toHaveClass(/lucide-code/);
+    await expect(skillIcon).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(skillIcon).toHaveCSS("border-top-width", "0px");
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/mcp`);
+    await expect(page.getByRole("heading", { name: "示例服务" })).toBeVisible();
+    await expect(page.getByText("查询经过筛选的公开资料。")).toBeVisible();
+    await expect(page.getByText("查询公开资料")).toBeVisible();
+    await expect(page.getByText("只读")).toBeVisible();
     expect(remoteRequests).toEqual([]);
+  });
+
+  test("releases the cover loading mask when WebGL uses the static fallback", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (contextId: string, ...args: unknown[]) {
+        if (contextId === "webgl") return null;
+        return Reflect.apply(getContext, this, [contextId, ...args]);
+      } as typeof HTMLCanvasElement.prototype.getContext;
+    });
+
+    await page.goto(`${portal.baseUrl}/#/`);
+
+    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "fallback");
+    await expect(page.locator("[data-cover-loading-overlay]")).toHaveAttribute("data-ready", "true");
+    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCSS("visibility", "hidden");
+    await expect(page.getByRole("button", { name: "Start" })).toBeEnabled();
   });
 
   test("previews without mutation, promotes two plugins and rolls one back", async () => {
@@ -116,17 +149,21 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByRole("link", { name: "研发助手插件" }).locator("img, svg")).toHaveCount(1);
     await expect(page.getByRole("heading", { level: 1, name: "鸟瞰全景" })).toBeVisible();
     const brandLink = page.getByRole("link", { name: "研发助手插件" });
-    await brandLink.focus();
+    await page.keyboard.press("Tab");
+    await expect(brandLink).toBeFocused();
     await expect(brandLink).toHaveCSS("outline-style", "none");
     await expect(brandLink).toHaveCSS("border-top-width", "0px");
 
     const selectedMenu = page.getByRole("link", { name: "Skills" });
+    await page.keyboard.press("Tab");
+    await expect(selectedMenu).toBeFocused();
+    await expect(selectedMenu).toHaveCSS("outline-style", "none");
+    await expect(selectedMenu.locator("svg")).toHaveCSS("outline-style", "none");
+    await expect(selectedMenu.locator("span")).toHaveCSS("text-decoration-line", "underline");
     await selectedMenu.click();
     await expect(page.getByRole("heading", { level: 1, name: "Skills" })).toBeVisible();
     await expect(selectedMenu).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(selectedMenu).toHaveCSS("border-top-width", "0px");
-    await selectedMenu.focus();
-    await expect(selectedMenu).toHaveCSS("outline-style", "none");
 
     const downloadAction = page.getByRole("link", { name: "下载最新版 v3.7.19" });
     await expect(downloadAction).toHaveAttribute(

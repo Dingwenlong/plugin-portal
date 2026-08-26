@@ -1,3 +1,18 @@
+import {
+  BookOpen,
+  ClipboardCheck,
+  Code,
+  Compass,
+  FileCheck2,
+  ListChecks,
+  Package,
+  Palette,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
 import { PortalModal } from "../PortalModal";
@@ -5,6 +20,19 @@ import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } fro
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
 
 const CHINESE_TEXT = /[\u3400-\u9fff]/;
+const SKILL_CATEGORY_ICONS: Record<string, LucideIcon> = {
+  implementation: Code,
+  delivery: FileCheck2,
+  navigator: Compass,
+  design: Palette,
+  testing: ClipboardCheck,
+  "plugin-ops": Package,
+  preparation: Settings2,
+  "knowledge-index": BookOpen,
+  "issue-board": ListChecks,
+  orchestration: Workflow,
+  "ops-sync": RefreshCw,
+};
 
 export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
   if (snapshot.skills.length === 0) return <Empty copy="该插件未提供 Skills" />;
@@ -13,7 +41,15 @@ export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
     <ContentTable headings={["名称", "用途"]}>
       {orderedSkills.map((skill) => (
         <tr key={skill.id}>
-          <td><strong>{skill.id}</strong>{skill.name === skill.id ? null : <small>{skill.name}</small>}</td>
+          <td>
+            <span className="skill-name-content">
+              <SkillIcon category={skill.category} />
+              <span className="skill-name-copy">
+                <strong>{skill.id}</strong>
+                {skill.name === skill.id ? null : <small>{skill.name}</small>}
+              </span>
+            </span>
+          </td>
           <td>{skill.description}</td>
         </tr>
       ))}
@@ -26,9 +62,32 @@ export function McpView({ snapshot }: { snapshot: PluginSnapshot }) {
   return (
     <section className="content-list">
       <h2>公开服务</h2>
-      {snapshot.mcp.map((service) => <article key={service.id}><strong>{service.id}</strong></article>)}
+      {snapshot.mcp.map((service) => (
+        <article className="mcp-service" key={service.id}>
+          {"name" in service ? (
+            <>
+              <div className="mcp-service-heading">
+                <div>
+                  <h3>{service.name}</h3>
+                  <small>{service.id}</small>
+                </div>
+                <span>{service.writeEnabled ? "包含写入操作" : "只读"}</span>
+              </div>
+              <p>{service.purpose}</p>
+              <ul aria-label={`${service.name}能力`} className="mcp-capabilities">
+                {service.capabilities.map((capability) => <li key={capability}>{capability}</li>)}
+              </ul>
+            </>
+          ) : <strong>{service.id}</strong>}
+        </article>
+      ))}
     </section>
   );
+}
+
+function SkillIcon({ category }: { category?: string }) {
+  const Icon = category === undefined ? Sparkles : SKILL_CATEGORY_ICONS[category] ?? Sparkles;
+  return <span aria-hidden="true" className="skill-name-icon"><Icon size={20} strokeWidth={1.75} /></span>;
 }
 
 export function ExtensionsView({ snapshot }: { snapshot: PluginSnapshot }) {

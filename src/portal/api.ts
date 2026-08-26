@@ -220,10 +220,35 @@ function isPluginSnapshot(value: unknown): value is PluginSnapshot {
     return false;
   }
   return (
-    isClosedArray(value.skills, ["id", "name", "description"]) &&
-    isClosedArray(value.mcp, ["id"]) &&
+    Array.isArray(value.skills) &&
+    value.skills.every(isSkillSummary) &&
+    Array.isArray(value.mcp) &&
+    value.mcp.every(isMcpSummary) &&
     isClosedArray(value.extensionTools, ["id", "name", "purpose", "url"]) &&
     isClosedArray(value.engineeringRules, ["path", "bodyMarkdown"])
+  );
+}
+
+function isSkillSummary(value: unknown): boolean {
+  if (isClosedRecord(value, ["id", "name", "description"])) {
+    return [value.id, value.name, value.description].every(isText);
+  }
+  return (
+    isClosedRecord(value, ["id", "name", "description", "category"]) &&
+    [value.id, value.name, value.description, value.category].every(isText)
+  );
+}
+
+function isMcpSummary(value: unknown): boolean {
+  if (isClosedRecord(value, ["id"])) return isText(value.id);
+  return (
+    isClosedRecord(value, ["id", "name", "purpose", "capabilities", "writeEnabled"]) &&
+    [value.id, value.name, value.purpose].every(isText) &&
+    Array.isArray(value.capabilities) &&
+    value.capabilities.length > 0 &&
+    value.capabilities.every(isText) &&
+    new Set(value.capabilities).size === value.capabilities.length &&
+    typeof value.writeEnabled === "boolean"
   );
 }
 

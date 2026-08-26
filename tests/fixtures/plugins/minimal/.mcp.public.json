@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sample-service": {
+      "name": "示例服务",
+      "purpose": "查询经过筛选的公开资料。",
+      "capabilities": [
+        "查询公开资料",
+        "读取处理状态"
+      ],
+      "writeEnabled": false
+    }
+  }
+}
