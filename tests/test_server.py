@@ -147,7 +147,7 @@ class PortalServerTests(unittest.TestCase):
             method="POST",
             body={
                 "expectedRevision": 0,
-                "items": [{"id": "one", "title": "一", "content": "内容"}],
+                "items": [{"id": "one", "scenario": "一", "content": "内容", "createdAt": "2026-08-26T00:00:00Z"}],
             },
             headers=headers,
         ) as response:

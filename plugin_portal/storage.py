@@ -7,7 +7,7 @@ import re
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .models import (
     ModelValidationError,
@@ -81,6 +81,50 @@ class PortalStore:
             canonical_json_bytes(document)
             self._atomic_write_json(path, document)
             return document
+
+    def write_documents_batch(
+        self,
+        changes: Mapping[str, tuple[dict[str, Any], int]],
+    ) -> dict[str, dict[str, Any]]:
+        if not isinstance(changes, Mapping) or not changes:
+            raise StorageError("Portal 批次资料不能为空")
+
+        with self._lock:
+            prepared: dict[str, tuple[Path, dict[str, Any], dict[str, Any], bool]] = {}
+            for name, change in changes.items():
+                if not isinstance(change, tuple) or len(change) != 2:
+                    raise StorageError("Portal 批次资料结构无效")
+                value, expected_revision = change
+                if isinstance(expected_revision, bool) or not isinstance(expected_revision, int):
+                    raise StorageError("expected_revision 必须是整数")
+                if not isinstance(value, dict):
+                    raise StorageError("Portal 资料必须是对象")
+                path = self._document_path(name)
+                current = self.read_document(name)
+                if current["revision"] != expected_revision:
+                    raise RevisionConflict("资料已更新，请刷新后重试")
+                document = {"revision": expected_revision + 1, "data": value}
+                canonical_json_bytes(document)
+                prepared[name] = (path, current, document, path.exists())
+
+            committed: list[str] = []
+            try:
+                for name, (path, _current, document, _existed) in prepared.items():
+                    self._atomic_write_json(path, document)
+                    committed.append(name)
+            except StorageError as error:
+                try:
+                    for name in reversed(committed):
+                        path, current, _document, existed = prepared[name]
+                        if existed:
+                            self._atomic_write_json(path, current)
+                        else:
+                            path.unlink(missing_ok=True)
+                except (OSError, StorageError) as rollback_error:
+                    raise StorageError("Portal 批次写入失败且无法恢复") from rollback_error
+                raise StorageError("Portal 批次写入失败，既有资料已恢复") from error
+
+            return {name: prepared[name][2] for name in prepared}
 
     def put_snapshot(self, plugin_key: str, snapshot: dict[str, Any]) -> str:
         if not isinstance(snapshot, dict):

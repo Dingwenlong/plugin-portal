@@ -4,7 +4,7 @@
 
 **Goal:** 一次性迁移研发助手旧 Portal 资料，并把插件站点收敛为无切换、无管理入口的单插件阅读空间。
 
-**Architecture:** Python 迁移器只从 loopback 旧 Portal 读取并转换为当前封闭模型；所有候选先校验再写入 Portal 自有存储。React 保持固定插件页面，由 Hub 承担插件管理，Prompt 与流程编辑统一使用可访问模态框。
+**Architecture:** Python 迁移器只从 loopback 旧 Portal 读取并转换为当前封闭模型；所有候选先校验再写入 Portal 自有存储。React 保持固定插件页面，由 Hub 承担插件管理，Prompt 与流程编辑统一使用可访问模态框。封面使用经过网络来源与许可核对的 XorDev Blackhole shader，本地适配并随构建打包，不产生运行时远端依赖。
 
 **Approved spec:** `docs/superpowers/specs/2026-08-26-plugin-portal-legacy-migration-and-plugin-shell.md`
 
@@ -76,7 +76,22 @@
 3. 保留既有 workflow JSON 与服务端图校验。
 4. 运行 focused Vitest 和 typecheck。
 
-### Task 5: 完整验证与本机迁移
+### Task 5: 网络来源封面 RED→GREEN
+
+**Files:**
+
+- Modify: `src/hub/CoverAccretionFieldShader.ts`
+- Modify: `src/hub/CoverAccretionFieldShader.test.ts`
+- Create: `THIRD_PARTY-NOTICE-XorDev-blackhole.txt`
+- Modify: `README.md`
+- Modify: `e2e/portal.spec.ts`
+
+1. 锁定作者、来源 URL、CC BY-NC-SA 4.0 与适配说明。
+2. 用 XorDev Blackhole 原始表达式建立 WebGL 1 本地适配，不复制远端运行时依赖。
+3. 锁定 `/#/` canvas 就绪、Start 转场不变、页面不发起远端请求。
+4. 真实浏览器检查视觉结果、离线运行和 WebGL 降级。
+
+### Task 6: 完整验证与本机迁移
 
 1. `python -m unittest discover -s tests -v`
 2. `npm test -- --run`
@@ -88,4 +103,3 @@
 8. 提交源码候选并合并 main。
 9. 对真实 data root 先 preview，再 apply；回读 5 Prompt、4 Tab、7 工具和技能可见性。
 10. 重启 9137，真实浏览器回读 Hub、两个插件、Prompt 和流程页面。
-

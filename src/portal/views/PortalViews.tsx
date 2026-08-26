@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { PortalModal } from "../PortalModal";
 import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } from "../types";
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
 
@@ -81,24 +82,36 @@ export function PromptsView({
   onSave: (revision: number, items: PromptItem[]) => Promise<unknown>;
 }) {
   const [showForm, setShowForm] = useState(false);
-  const [title, setTitle] = useState("");
+  const [scenario, setScenario] = useState("");
   const [content, setContent] = useState("");
   const [editingId, setEditingId] = useState<string | undefined>();
   const [error, setError] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingId(undefined);
+    setScenario("");
+    setContent("");
+    triggerRef.current?.focus();
+  };
 
   const save = async () => {
     const id = editingId ?? uniquePromptId(document.items);
-    const nextItem = { id, title: title.trim(), content: content.trim() };
+    const existing = document.items.find((item) => item.id === editingId);
+    const nextItem = {
+      id,
+      scenario: scenario.trim(),
+      content: content.trim(),
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
     const next = editingId
       ? document.items.map((item) => item.id === editingId ? nextItem : item)
       : [...document.items, nextItem];
     try {
       setError("");
       await onSave(document.revision, next);
-      setShowForm(false);
-      setTitle("");
-      setContent("");
-      setEditingId(undefined);
+      closeForm();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法保存 Prompt");
     }
@@ -107,14 +120,14 @@ export function PromptsView({
   return (
     <section className="prompts-view">
       {document.items.length === 0 ? <p className="empty-copy">尚未添加 Prompt</p> : (
-        <ContentTable headings={["标题", "内容", "操作"]}>
+        <ContentTable headings={["常用场景", "Prompt", "添加时间", "操作"]}>
           {document.items.map((item) => <tr key={item.id}>
-            <td>{item.title}</td><td>{item.content}</td>
+            <td>{item.scenario}</td><td>{item.content}</td><td>{formatPromptTime(item.createdAt)}</td>
             <td className="row-actions">
-              <button aria-label={`编辑 ${item.title}`} onClick={() => {
-                setEditingId(item.id); setTitle(item.title); setContent(item.content); setShowForm(true);
+              <button aria-label={`编辑 ${item.scenario}`} onClick={() => {
+                setEditingId(item.id); setScenario(item.scenario); setContent(item.content); setShowForm(true);
               }} type="button">编辑</button>
-              <button aria-label={`删除 ${item.title}`} onClick={async () => {
+              <button aria-label={`删除 ${item.scenario}`} onClick={async () => {
                 try {
                   setError("");
                   await onSave(document.revision, document.items.filter((candidate) => candidate.id !== item.id));
@@ -126,13 +139,18 @@ export function PromptsView({
           </tr>)}
         </ContentTable>
       )}
-      <button onClick={() => { setEditingId(undefined); setTitle(""); setContent(""); setShowForm(true); }} type="button">新增 Prompt</button>
+      <button ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} type="button">新增 Prompt</button>
       {showForm ? (
-        <div className="edit-form">
-          <label>Prompt 标题<input aria-label="Prompt 标题" value={title} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
-          <label>Prompt 内容<textarea aria-label="Prompt 内容" value={content} onChange={(event) => setContent(event.currentTarget.value)} /></label>
-          <button disabled={!title.trim() || !content.trim()} onClick={save} type="button">保存 Prompt</button>
-        </div>
+        <PortalModal onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
+          <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <label>常用场景<input aria-label="常用场景" data-autofocus value={scenario} onChange={(event) => setScenario(event.currentTarget.value)} /></label>
+            <label>Prompt 内容<textarea aria-label="Prompt 内容" value={content} onChange={(event) => setContent(event.currentTarget.value)} /></label>
+            <footer className="modal-actions">
+              <button onClick={closeForm} type="button">取消</button>
+              <button disabled={!scenario.trim() || !content.trim()} type="submit">保存</button>
+            </footer>
+          </form>
+        </PortalModal>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
     </section>
@@ -162,4 +180,12 @@ function uniquePromptId(items: PromptItem[]): string {
   let index = items.length + 1;
   while (items.some((item) => item.id === `prompt-${index}`)) index += 1;
   return `prompt-${index}`;
+}
+
+function formatPromptTime(value: string): string {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.valueOf())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(timestamp);
 }

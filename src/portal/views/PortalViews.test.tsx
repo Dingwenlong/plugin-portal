@@ -102,12 +102,13 @@ describe("PromptsView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "新增 Prompt" }));
-    fireEvent.change(screen.getByLabelText("Prompt 标题"), { target: { value: "检查设计" } });
+    expect(screen.getByRole("dialog", { name: "新增 Prompt" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("常用场景"), { target: { value: "检查设计" } });
     fireEvent.change(screen.getByLabelText("Prompt 内容"), { target: { value: "检查字段与回应码。" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存 Prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     expect(onSave).toHaveBeenCalledWith(3, [
-      expect.objectContaining({ title: "检查设计", content: "检查字段与回应码。" }),
+      expect.objectContaining({ scenario: "检查设计", content: "检查字段与回应码。", createdAt: expect.stringMatching(/Z$/) }),
     ]);
   });
 
@@ -118,7 +119,7 @@ describe("PromptsView", () => {
         document={{
           revision: 4,
           pluginKey: "company-dev/sample-plugin",
-          items: [{ id: "check", title: "检查设计", content: "旧内容" }],
+          items: [{ id: "check", scenario: "检查设计", content: "旧内容", createdAt: "2026-08-12T07:38:30.798Z" }],
         }}
         onSave={onSave}
       />,
@@ -126,12 +127,21 @@ describe("PromptsView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑 检查设计" }));
     fireEvent.change(screen.getByLabelText("Prompt 内容"), { target: { value: "新内容" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存 Prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(onSave).toHaveBeenLastCalledWith(4, [
-      { id: "check", title: "检查设计", content: "新内容" },
+      { id: "check", scenario: "检查设计", content: "新内容", createdAt: "2026-08-12T07:38:30.798Z" },
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "删除 检查设计" }));
     expect(onSave).toHaveBeenLastCalledWith(4, []);
+  });
+
+  it("closes the Prompt dialog with Escape and restores focus", async () => {
+    render(<PromptsView document={{ revision: 0, pluginKey: "company-dev/sample-plugin", items: [] }} onSave={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "新增 Prompt" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "新增 Prompt" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "新增 Prompt" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

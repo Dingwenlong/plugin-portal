@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+from .legacy_migration import (
+    LegacyMigrationError,
+    apply_legacy_candidate,
+    build_legacy_candidate,
+    fetch_legacy_source,
+)
 from .server import ServerConfigurationError, create_server
+from .storage import PortalStore, StorageError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=9137)
     serve.add_argument("--data-root", type=Path, required=True)
     serve.add_argument("--web-root", type=Path, required=True)
+    migrate = subparsers.add_parser("migrate-legacy", help="从旧版本机 Portal 一次性迁移资料")
+    migrate.add_argument("--source-url", required=True)
+    migrate.add_argument("--plugin-key", required=True)
+    migrate.add_argument("--data-root", type=Path, required=True)
+    mode = migrate.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--preview", action="store_true")
+    mode.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -23,6 +38,8 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     arguments = build_parser().parse_args()
+    if arguments.command == "migrate-legacy":
+        return _migrate_legacy(arguments)
     if arguments.command != "serve":
         return 2
     try:
@@ -43,6 +60,40 @@ def main() -> int:
         pass
     finally:
         server.server_close()
+    return 0
+
+
+def _migrate_legacy(arguments: argparse.Namespace) -> int:
+    try:
+        store = PortalStore(arguments.data_root)
+        catalog = store.read_document("catalog")
+        plugins = catalog["data"].get("plugins") if isinstance(catalog["data"], dict) else None
+        record = plugins.get(arguments.plugin_key) if isinstance(plugins, dict) else None
+        if not isinstance(record, dict) or not isinstance(record.get("activeSnapshot"), str):
+            raise LegacyMigrationError("迁移目标插件尚未纳入")
+        current_snapshot = store.read_snapshot(arguments.plugin_key, record["activeSnapshot"])
+        portal_data, prompts = fetch_legacy_source(arguments.source_url)
+        candidate = build_legacy_candidate(
+            portal_data=portal_data,
+            prompt_payload=prompts,
+            current_snapshot=current_snapshot,
+            plugin_key=arguments.plugin_key,
+            source_url=arguments.source_url,
+        )
+        if arguments.preview:
+            result = {
+                "mode": "preview",
+                "pluginKey": candidate["pluginKey"],
+                "sourceUrl": candidate["sourceUrl"],
+                "counts": candidate["counts"],
+                "fingerprint": candidate["fingerprint"],
+            }
+        else:
+            result = {"mode": "apply", "pluginKey": candidate["pluginKey"], **apply_legacy_candidate(store, candidate)}
+    except (LegacyMigrationError, StorageError, OSError) as error:
+        print(f"旧版资料迁移失败：{error}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
 

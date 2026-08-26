@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
-import { PluginManager, type PluginManagementClient } from "./PluginManager";
+import { PortalModal } from "./PortalModal";
+import type { PluginManagementClient } from "./PluginManager";
 import { parsePortalRoute, portalHref, type PortalPage } from "./routes";
 import type {
   PluginCatalog,
@@ -45,7 +46,6 @@ interface LoadedPluginData {
 }
 
 const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string }> = [
-  { page: "overview", label: "鸟瞰全景" },
   { page: "skills", label: "Skills" },
   { page: "prompts", label: "Prompts" },
   { page: "mcp", label: "MCP" },
@@ -53,8 +53,6 @@ const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string }> = [
   { page: "rules", label: "工程规范" },
   { page: "releases", label: "版本沿革" },
 ];
-
-const LAST_PLUGIN_KEY = "plugin-portal.last-plugin";
 
 export function PortalShell({
   client,
@@ -71,7 +69,7 @@ export function PortalShell({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState(false);
-  const [managingPlugins, setManagingPlugins] = useState(false);
+  const workflowTriggerRef = useRef<HTMLButtonElement>(null);
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
   const sourceHash = initialHash ?? browserHash;
@@ -146,6 +144,7 @@ export function PortalShell({
   if (error) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p role="alert">{error}</p></main>;
   const refreshHubCatalog = async () => {
     setCatalog(await resolvedClient.listPlugins());
+    setData({});
   };
 
   if (hubRoute) return <HubEntry
@@ -162,50 +161,13 @@ export function PortalShell({
   />;
 
   if (loading && catalog.items.length === 0) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>正在读取已纳入插件…</p></main>;
-  const reloadCatalog = async (pluginId: string) => {
-    const nextCatalog = await resolvedClient.listPlugins();
-    setCatalog(nextCatalog);
-    setSelectedPluginId(pluginId);
-    rememberPlugin(pluginId);
-    if (initialHash === undefined) {
-      const nextHash = portalHref(pluginId, page);
-      setBrowserHash(nextHash);
-      window.location.hash = nextHash;
-    }
-    const changed = nextCatalog.items.find((item) => item.id === pluginId);
-    if (changed) {
-      setData((current) => {
-        const next = { ...current };
-        delete next[changed.pluginKey];
-        return next;
-      });
-    }
-  };
-
   if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>该插件未纳入 Portal。</p></main>;
 
   const loaded = data[selectedPlugin.pluginKey];
   return (
     <div className="portal-layout">
       <aside className="portal-sidebar">
-        <a className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>Plugin Portal</a>
-        <label className="plugin-selector">
-          <span>当前插件</span>
-          <select aria-label="当前插件" value={selectedPlugin.id} onChange={(event) => {
-            const pluginId = event.currentTarget.value;
-            rememberPlugin(pluginId);
-            if (initialHash === undefined) {
-              const nextHash = portalHref(pluginId, page);
-              setBrowserHash(nextHash);
-              window.location.hash = nextHash;
-            } else {
-              setSelectedPluginId(pluginId);
-            }
-            setEditingWorkflow(false);
-          }}>
-            {catalog.items.map((plugin) => <option key={plugin.pluginKey} value={plugin.id}>{plugin.name}</option>)}
-          </select>
-        </label>
+        <a className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>{selectedPlugin.name}</a>
         <nav aria-label="插件内容">
           {NAVIGATION.map((item) => (
             <a aria-current={item.page === page ? "page" : undefined} href={portalHref(selectedPlugin.id, item.page)} key={item.page}>{item.label}</a>
@@ -215,14 +177,15 @@ export function PortalShell({
       <main className="portal-main">
         <header className="portal-header">
           <h1>{selectedPlugin.name}</h1>
-          <div className="header-actions"><span className="plugin-identity">{selectedPlugin.id}</span><button onClick={() => setManagingPlugins((value) => !value)} type="button">管理插件</button></div>
         </header>
         <section className="portal-content" aria-busy={!loaded}>
-          {managingPlugins ? <PluginManager catalogRevision={catalog.revision} client={resolvedClient} currentSnapshot={loaded?.snapshot} onChanged={reloadCatalog} /> : !loaded ? <p>正在读取公开资料…</p> : renderPage({
+          {!loaded ? <p>正在读取公开资料…</p> : renderPage({
             page,
             loaded,
             editingWorkflow,
-            onEditWorkflow: () => setEditingWorkflow((value) => !value),
+            workflowTriggerRef,
+            onEditWorkflow: () => setEditingWorkflow(true),
+            onCloseWorkflow: () => { setEditingWorkflow(false); workflowTriggerRef.current?.focus(); },
             onSavePrompts: async (revision, items) => {
               const prompts = await resolvedClient.savePrompts(selectedPlugin.pluginKey, revision, items);
               setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], prompts } }));
@@ -239,32 +202,28 @@ export function PortalShell({
   );
 }
 
-function rememberPlugin(pluginId: string): void {
-  try {
-    window.localStorage.setItem(LAST_PLUGIN_KEY, pluginId);
-  } catch {
-    // URL remains the canonical, refresh-safe selection when storage is unavailable.
-  }
-}
-
 function renderPage({
   page,
   loaded,
   editingWorkflow,
+  workflowTriggerRef,
   onEditWorkflow,
+  onCloseWorkflow,
   onSavePrompts,
   onSaveWorkflow,
 }: {
   page: PortalPage;
   loaded: LoadedPluginData;
   editingWorkflow: boolean;
+  workflowTriggerRef: React.RefObject<HTMLButtonElement | null>;
   onEditWorkflow: () => void;
+  onCloseWorkflow: () => void;
   onSavePrompts: (revision: number, items: PromptItem[]) => Promise<void>;
   onSaveWorkflow: (revision: number, workflow: WorkflowValue) => Promise<void>;
 }) {
   switch (page) {
     case "overview":
-      return <><div className="view-actions"><button onClick={onEditWorkflow} type="button">{editingWorkflow ? "查看流程" : "配置流程"}</button></div>{editingWorkflow ? <WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /> : <OverviewView workflow={loaded.workflow} />}</>;
+      return <><div className="view-actions"><button onClick={onEditWorkflow} ref={workflowTriggerRef} type="button">配置流程</button></div><OverviewView workflow={loaded.workflow} />{editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}</>;
     case "skills": return <SkillsView snapshot={loaded.snapshot} />;
     case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} />;
     case "mcp": return <McpView snapshot={loaded.snapshot} />;

@@ -143,7 +143,7 @@ class PortalApiTests(unittest.TestCase):
             plugin_key,
             {
                 "expectedRevision": 0,
-                "items": [{"id": "check", "title": "检查", "content": "检查内容"}],
+                "items": [{"id": "check", "scenario": "检查", "content": "检查内容", "createdAt": "2026-08-26T00:00:00Z"}],
             },
         )
         self.assertEqual(prompts["revision"], 1)

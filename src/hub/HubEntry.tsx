@@ -9,13 +9,17 @@ import {
 
 import { PluginManager, type PluginManagementClient } from "../portal/PluginManager";
 import { portalHref } from "../portal/routes";
-import type { PluginCatalog } from "../portal/types";
+import type { PluginCatalog, PluginSnapshot } from "../portal/types";
 import { CoverAccretionBackground } from "./CoverAccretionBackground";
 import { CoverLiquidGlassButton } from "./CoverLiquidGlassButton";
 
 export type HubRoute = "cover" | "hub";
 export type EntryPhase = "idle" | "engulfing" | "revealing" | "hub";
 type EntryEvent = "start" | "covered" | "revealed" | "safety-timeout" | "reset";
+
+interface HubManagementClient extends PluginManagementClient {
+  getSnapshot(pluginKey: string): Promise<PluginSnapshot>;
+}
 
 const START_DIAMETER = 112;
 const TIMING = Object.freeze({
@@ -44,12 +48,14 @@ function HubList({
   firstEntryRef,
   includeButtonRef,
   onInclude,
+  onManage,
 }: {
   catalog: PluginCatalog;
   interactive: boolean;
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
+  onManage: (pluginKey: string) => void;
 }) {
   return <main className="company-dev-hub" data-company-dev-hub aria-hidden={!interactive || undefined}>
     <h1 className="sr-only">已纳入插件</h1>
@@ -62,18 +68,20 @@ function HubList({
         <div className="company-dev-hub-entry-list">
           {catalog.items.length === 0
             ? <p className="company-dev-hub-empty">尚未纳入插件</p>
-            : catalog.items.map((item, index) => <a
-                key={item.pluginKey}
-                className="company-dev-hub-entry"
-                aria-label={item.name}
-                href={portalHref(item.id, "overview")}
-                ref={index === 0 ? firstEntryRef : undefined}
-                tabIndex={interactive ? 0 : -1}
-                data-hub-entry={item.id}
-              >
-                <span>{item.name}</span>
-                <span className="company-dev-hub-entry-action">进入</span>
-              </a>)}
+            : catalog.items.map((item, index) => <div className="company-dev-hub-entry-row" key={item.pluginKey}>
+                <a
+                  className="company-dev-hub-entry"
+                  aria-label={item.name}
+                  href={portalHref(item.id, "overview")}
+                  ref={index === 0 ? firstEntryRef : undefined}
+                  tabIndex={interactive ? 0 : -1}
+                  data-hub-entry={item.id}
+                >
+                  <span>{item.name}</span>
+                  <span className="company-dev-hub-entry-action">进入</span>
+                </a>
+                <button aria-label={`管理 ${item.name}`} onClick={() => onManage(item.pluginKey)} tabIndex={interactive ? 0 : -1} type="button">管理</button>
+              </div>)}
         </div>
       </section>
     </div>
@@ -92,6 +100,7 @@ function GenericHubView({
   firstEntryRef,
   includeButtonRef,
   onInclude,
+  onManage,
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
@@ -104,6 +113,7 @@ function GenericHubView({
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
+  onManage: (pluginKey: string) => void;
 }) {
   const effectivePhase = route === "hub" && phase === "idle" ? "hub" : phase;
   const showHub = effectivePhase === "revealing" || effectivePhase === "hub";
@@ -117,6 +127,7 @@ function GenericHubView({
       firstEntryRef={firstEntryRef}
       includeButtonRef={includeButtonRef}
       onInclude={onInclude}
+      onManage={onManage}
     />}
     {showCover && <main
       className="hub-cover hub-entry-cover-layer"
@@ -144,11 +155,13 @@ function InteractiveHub({
   route,
   onNavigate,
   onInclude,
+  onManage,
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
   onNavigate: (route: HubRoute) => void;
   onInclude: () => void;
+  onManage: (pluginKey: string) => void;
 }) {
   const initial = route === "hub" ? "hub" : "idle";
   const [phase, setPhase] = useState<EntryPhase>(initial);
@@ -257,6 +270,7 @@ function InteractiveHub({
     firstEntryRef={firstEntryRef}
     includeButtonRef={includeButtonRef}
     onInclude={onInclude}
+    onManage={onManage}
     onStart={start}
     onButtonAnimationEnd={(event) => animationCompleted(event.animationName)}
     onCoverAnimationEnd={(event) => {
@@ -273,12 +287,32 @@ export function HubEntry({
   onCatalogChanged,
 }: {
   catalog: PluginCatalog;
-  client: PluginManagementClient;
+  client: HubManagementClient;
   route: HubRoute;
   onNavigate: (route: HubRoute) => void;
   onCatalogChanged: () => Promise<void>;
 }) {
   const [including, setIncluding] = useState(false);
+  const [managedPluginKey, setManagedPluginKey] = useState("");
+  const [managedSnapshot, setManagedSnapshot] = useState<PluginSnapshot>();
+  const [managementError, setManagementError] = useState("");
+
+  const managePlugin = async (pluginKey: string) => {
+    try {
+      setManagementError("");
+      setManagedPluginKey(pluginKey);
+      setManagedSnapshot(await client.getSnapshot(pluginKey));
+    } catch (reason) {
+      setManagedPluginKey("");
+      setManagedSnapshot(undefined);
+      setManagementError(reason instanceof Error ? reason.message : "无法读取插件资料");
+    }
+  };
+
+  const closeManagement = () => {
+    setManagedPluginKey("");
+    setManagedSnapshot(undefined);
+  };
 
   useEffect(() => {
     if (!including) return undefined;
@@ -290,7 +324,13 @@ export function HubEntry({
   }, [including]);
 
   return <>
-    <InteractiveHub catalog={catalog} route={route} onNavigate={onNavigate} onInclude={() => setIncluding(true)} />
+    <InteractiveHub
+      catalog={catalog}
+      route={route}
+      onNavigate={onNavigate}
+      onInclude={() => { closeManagement(); setIncluding(true); }}
+      onManage={(pluginKey) => { setIncluding(false); void managePlugin(pluginKey); }}
+    />
     {including ? <div className="hub-plugin-dialog-backdrop">
       <section className="hub-plugin-dialog" role="dialog" aria-modal="true" aria-label="纳入插件">
         <div className="hub-plugin-dialog-actions">
@@ -306,5 +346,22 @@ export function HubEntry({
         />
       </section>
     </div> : null}
+    {managedPluginKey && managedSnapshot ? <div className="hub-plugin-dialog-backdrop">
+      <section className="hub-plugin-dialog" role="dialog" aria-modal="true" aria-label={`管理 ${managedSnapshot.plugin.name}`}>
+        <div className="hub-plugin-dialog-actions">
+          <button type="button" onClick={closeManagement}>关闭</button>
+        </div>
+        <PluginManager
+          catalogRevision={catalog.revision}
+          client={client}
+          currentSnapshot={managedSnapshot}
+          onChanged={async () => {
+            await onCatalogChanged();
+            closeManagement();
+          }}
+        />
+      </section>
+    </div> : null}
+    {managementError ? <p className="hub-management-error" role="alert">{managementError}</p> : null}
   </>;
 }

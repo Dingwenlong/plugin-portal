@@ -216,7 +216,7 @@ function isPromptDocument(value: unknown, pluginKey: string): value is PromptDoc
     isClosedRecord(value, ["revision", "pluginKey", "items"]) &&
     isRevision(value.revision) &&
     value.pluginKey === pluginKey &&
-    isClosedArray(value.items, ["id", "title", "content"])
+    isClosedArray(value.items, ["id", "scenario", "content", "createdAt"])
   );
 }
 

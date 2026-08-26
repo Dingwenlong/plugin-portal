@@ -55,8 +55,9 @@ export interface PluginSnapshot {
 
 export interface PromptItem {
   id: string;
-  title: string;
+  scenario: string;
   content: string;
+  createdAt: string;
 }
 
 export interface PromptDocument {

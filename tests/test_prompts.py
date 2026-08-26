@@ -13,8 +13,9 @@ class PromptValidationTests(unittest.TestCase):
             "items": [
                 {
                     "id": "check-design",
-                    "title": "检查接口设计",
+                    "scenario": "检查接口设计",
                     "content": "检查字段、回应码和资料来源。",
+                    "createdAt": "2026-08-26T00:00:00Z",
                 }
             ],
         }
@@ -25,13 +26,13 @@ class PromptValidationTests(unittest.TestCase):
             {
                 "pluginKey": "company-dev/project-delivery-hub",
                 "items": [
-                    {"id": "same", "title": "一", "content": "一"},
-                    {"id": "same", "title": "二", "content": "二"},
+                    {"id": "same", "scenario": "一", "content": "一", "createdAt": "2026-08-26T00:00:00Z"},
+                    {"id": "same", "scenario": "二", "content": "二", "createdAt": "2026-08-26T00:00:00Z"},
                 ],
             },
             {
                 "pluginKey": "company-dev/project-delivery-hub",
-                "items": [{"id": "one", "title": "一", "content": "一", "shared": True}],
+                "items": [{"id": "one", "scenario": "一", "content": "一", "createdAt": "2026-08-26T00:00:00Z", "shared": True}],
             },
             {"pluginKey": "company-dev/yusheng-inc", "items": []},
         )
@@ -50,12 +51,12 @@ class PromptRepositoryTests(unittest.TestCase):
     def test_plugins_have_isolated_prompt_lists(self) -> None:
         first = self.repository.save(
             "company-dev/project-delivery-hub",
-            [{"id": "pdh", "title": "研发", "content": "研发内容"}],
+            [{"id": "pdh", "scenario": "研发", "content": "研发内容", "createdAt": "2026-08-26T00:00:00Z"}],
             expected_revision=0,
         )
         second = self.repository.save(
             "company-dev/yusheng-inc",
-            [{"id": "ys", "title": "昱勝", "content": "昱勝内容"}],
+            [{"id": "ys", "scenario": "昱勝", "content": "昱勝内容", "createdAt": "2026-08-26T00:00:00Z"}],
             expected_revision=first["revision"],
         )
 

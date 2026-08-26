@@ -1,0 +1,21 @@
+XorDev Blackhole shader
+========================
+
+Original author: XorDev
+Original publication:
+https://x.com/XorDev/status/1897669357934608590
+
+Archived source reference used for verification:
+https://github.com/darosh/px-stream/blob/main/assets/mini-shaders/T.%20XorDev-1897669357934608590.glsl
+
+License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+The Plugin Portal adaptation expands the minified expression, initializes the
+shader state explicitly, maps the host inputs to local WebGL 1 uniforms, and
+writes an opaque fragment color. The adapted shader remains available under
+CC BY-NC-SA 4.0. No remote script or asset is fetched at runtime.
+
+You are free to share and adapt this material under the license terms. You
+must give appropriate credit, indicate changes, use it only for non-commercial
+purposes, and distribute adaptations under the same license.

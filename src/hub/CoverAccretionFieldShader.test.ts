@@ -5,29 +5,28 @@ import {
   COVER_ACCRETION_FIELD_VERTEX_SHADER,
 } from "./CoverAccretionFieldShader";
 
-describe("clean-room cover accretion field", () => {
+describe("network-sourced cover accretion field", () => {
   test("removes the legacy shader module from the runtime source", () => {
     expect(import.meta.glob("./CoverAccretionShader.ts")).toEqual({});
   });
 
-  test("uses an independent local shader contract", () => {
+  test("keeps the attributed XorDev black-hole shader contract local", () => {
     const source = `${COVER_ACCRETION_FIELD_VERTEX_SHADER}\n${COVER_ACCRETION_FIELD_FRAGMENT_SHADER}`;
 
     expect(COVER_ACCRETION_FIELD_PROVENANCE).toEqual({
-      designId: "pdh-cover-accretion-field-v1",
-      origin: "clean-room",
+      author: "XorDev",
+      license: "CC BY-NC-SA 4.0",
+      sourceUrl: "https://x.com/XorDev/status/1897669357934608590",
+      adaptation: "WebGL 1 uniform and output integration for Plugin Portal",
     });
     expect(COVER_ACCRETION_FIELD_VERTEX_SHADER).toContain("aViewportCorner");
     expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("uViewport");
     expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("uClock");
-    expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("pdhFieldCell");
-    expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("pdhFlowRibbon");
-    expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("pdhFieldPalette");
+    expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("xorBlackHole");
+    expect(COVER_ACCRETION_FIELD_FRAGMENT_SHADER).toContain("length(point) - 0.7");
 
     for (const forbidden of [
-      "XorDev",
       "OpenProcessing",
-      "CC BY-NC-SA",
       "http://",
       "https://",
       "iResolution",

@@ -38,12 +38,12 @@ describe("PortalClient", () => {
       return Response.json({
         revision: 1,
         pluginKey: "company-dev/project-delivery-hub",
-        items: [{ id: "one", title: "一", content: "内容" }],
+        items: [{ id: "one", scenario: "一", content: "内容", createdAt: "2026-08-26T00:00:00Z" }],
       });
     });
 
     await client.savePrompts("company-dev/project-delivery-hub", 0, [
-      { id: "one", title: "一", content: "内容" },
+      { id: "one", scenario: "一", content: "内容", createdAt: "2026-08-26T00:00:00Z" },
     ]);
 
     expect(calls).toHaveLength(2);

@@ -2,7 +2,7 @@
 
 面向个人本机使用的多插件只读门户。Portal 拥有固定页面与独立发布周期，人工纳入插件并生成经过校验的公开资料快照；插件不依赖 Portal，Portal 也不修改或执行插件代码。
 
-当前 MVP 已提供固定七页、多插件切换、只读公开快照、按插件隔离的 Prompts 与鸟瞰全景流程配置。已确认的架构见：
+当前 MVP 已提供固定七页、多插件目录与单插件阅读空间、只读公开快照、按插件隔离的 Prompts 与鸟瞰全景流程配置。已确认的架构见：
 
 - [多插件只读 Portal 设计](docs/superpowers/specs/2026-08-25-plugin-portal-design.md)
 
@@ -31,6 +31,6 @@ npm run build
 - Prompts 与鸟瞰全景流程归 Portal 用户所有，按完整插件身份隔离。
 - 插件导入候选、个人 Prompts、流程和服务日志只位于本机数据目录。
 
-根地址保留背景与 Start 入口，进入 `/#/hub` 后可通过“纳入插件”按钮打开管理弹窗。插件页面右上角的“管理插件”用于预览刷新、确认切换和回滚。点击“选择插件目录”会打开 Windows 目录选择窗口，并从插件清单自动识别名称、ID 与版本；发布者、规范路径和扩展工具位于可选的高级区域。所有变更仍通过同一套本机 loopback API、会话令牌与 revision 门禁完成。
+根地址保留背景与 Start 入口，进入 `/#/hub` 后可纳入、刷新或回滚插件。插件站点只显示当前插件内容，不提供插件切换或管理入口。点击“选择插件目录”会打开 Windows 目录选择窗口，并从插件清单自动识别名称、ID 与版本；发布者、规范路径和扩展工具位于可选的高级区域。所有变更仍通过同一套本机 loopback API、会话令牌与 revision 门禁完成。
 
-封面液态玻璃效果复用了 LerSent001 orb 的 MIT 许可实现，完整许可见 [THIRD_PARTY-LICENSE-LerSent001-orb.txt](THIRD_PARTY-LICENSE-LerSent001-orb.txt)。背景场由本项目 clean-room 实现，不包含 OpenProcessing 的 NC-SA 源码。
+封面液态玻璃效果复用了 LerSent001 orb 的 MIT 许可实现，完整许可见 [THIRD_PARTY-LICENSE-LerSent001-orb.txt](THIRD_PARTY-LICENSE-LerSent001-orb.txt)。背景使用 XorDev 的 Blackhole shader，并按 CC BY-NC-SA 4.0 保留署名、来源与修改说明，见 [THIRD_PARTY-NOTICE-XorDev-blackhole.txt](THIRD_PARTY-NOTICE-XorDev-blackhole.txt)。两项实现都随构建打包到本机，不产生运行时远端请求。

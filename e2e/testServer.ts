@@ -133,11 +133,11 @@ export async function startTestPortal(): Promise<TestPortal> {
     seedUserContent: async () => {
       await api(`/api/plugins/${encodeURIComponent("company-dev/project-delivery-hub")}/prompts`, {
         method: "POST", session: true,
-        body: { expectedRevision: 0, items: [{ id: "pdh", title: "研发 Prompt", content: "研发内容" }] },
+        body: { expectedRevision: 0, items: [{ id: "pdh", scenario: "研发 Prompt", content: "研发内容", createdAt: "2026-08-26T00:00:00Z" }] },
       });
       await api(`/api/plugins/${encodeURIComponent("company-dev/yusheng-inc")}/prompts`, {
         method: "POST", session: true,
-        body: { expectedRevision: 1, items: [{ id: "ys", title: "昱勝 Prompt", content: "昱勝内容" }] },
+        body: { expectedRevision: 1, items: [{ id: "ys", scenario: "昱勝 Prompt", content: "昱勝内容", createdAt: "2026-08-26T00:00:00Z" }] },
       });
       await api(`/api/plugins/${encodeURIComponent("company-dev/project-delivery-hub")}/workflows`, {
         method: "POST", session: true,
