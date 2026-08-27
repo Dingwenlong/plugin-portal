@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { PortalShell, type PortalDataClient } from "./PortalShell";
@@ -176,6 +176,15 @@ describe("PortalShell", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  it.each(["overview", "prompts", "skills"])("keeps download last in the %s capsule action order", async (page) => {
+    render(<PortalShell client={createClient()} initialHash={`#/plugins/project-delivery-hub/${page}`} />);
+
+    const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
+    const actions = download.closest(".portal-capsule-actions")!;
+    expect(actions.lastElementChild).toBe(download);
+    expect(actions.firstElementChild).toBe(screen.getByRole("button", { name: "打开导航菜单" }));
+  });
+
   it("hides after sustained downward scrolling and restores on upward scrolling, focus and route changes", async () => {
     Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
     const { rerender } = render(
@@ -184,16 +193,16 @@ describe("PortalShell", () => {
     const capsule = await screen.findByRole("banner", { name: "插件导航" });
     expect(capsule).toHaveAttribute("data-visibility", "visible");
 
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 30 });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 24 });
     fireEvent.scroll(window);
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 82 });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 48 });
     fireEvent.scroll(window);
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "hidden"));
 
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 72 });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 38 });
     fireEvent.scroll(window);
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 45 });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 21 });
     fireEvent.scroll(window);
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
 
@@ -206,6 +215,30 @@ describe("PortalShell", () => {
     Object.defineProperty(window, "scrollY", { configurable: true, value: 104 });
     rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/mcp" />);
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+  });
+
+  it("uses an exact 24px threshold in both directions outside the top guard", async () => {
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 100 });
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />);
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    const scroll = async (position: number) => {
+      await act(async () => {
+        Object.defineProperty(window, "scrollY", { configurable: true, value: position });
+        fireEvent.scroll(window);
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      });
+    };
+
+    await scroll(123);
+    expect(capsule).toHaveAttribute("data-visibility", "visible");
+    await scroll(124);
+    expect(capsule).toHaveAttribute("data-visibility", "hidden");
+    await scroll(101);
+    expect(capsule).toHaveAttribute("data-visibility", "hidden");
+    await scroll(100);
+    expect(capsule).toHaveAttribute("data-visibility", "visible");
+    await scroll(0);
+    expect(capsule).toHaveAttribute("data-visibility", "visible");
   });
 
   it("offers the same six links from the compact navigation and restores focus when it closes", async () => {

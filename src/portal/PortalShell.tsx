@@ -136,8 +136,10 @@ export function PortalShell({
         const delta = currentY - previousY;
         lastScrollYRef.current = currentY;
 
-        const capsuleHasFocus = capsuleRef.current?.contains(document.activeElement) ?? false;
-        if (currentY <= 24 || mobileMenuOpen || portalModalOpen || capsuleHasFocus) {
+        const focusedElement = document.activeElement;
+        const capsuleHasKeyboardFocus = capsuleRef.current?.contains(focusedElement)
+          && focusedElement?.matches(":focus-visible");
+        if (currentY <= 24 || mobileMenuOpen || portalModalOpen || capsuleHasKeyboardFocus) {
           downwardTravelRef.current = 0;
           upwardTravelRef.current = 0;
           setCapsuleHidden(false);
@@ -146,7 +148,7 @@ export function PortalShell({
         if (delta > 0) {
           upwardTravelRef.current = 0;
           downwardTravelRef.current += delta;
-          if (downwardTravelRef.current >= 48) setCapsuleHidden(true);
+          if (downwardTravelRef.current >= 24) setCapsuleHidden(true);
         } else if (delta < 0) {
           downwardTravelRef.current = 0;
           upwardTravelRef.current += Math.abs(delta);
@@ -316,8 +318,6 @@ export function PortalShell({
             ))}
           </nav>
           <div className="portal-capsule-actions">
-            {loaded ? <DownloadAction info={loaded.download} /> : null}
-            <div className="portal-page-actions" ref={setPageActionTarget} />
             <button
               aria-controls="portal-capsule-navigation"
               aria-expanded={mobileMenuOpen}
@@ -330,6 +330,8 @@ export function PortalShell({
             >
               {mobileMenuOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
             </button>
+            <div className="portal-page-actions" ref={setPageActionTarget} />
+            {loaded ? <DownloadAction info={loaded.download} /> : null}
           </div>
         </header>
         <main aria-label={PAGE_TITLES[page]} className="portal-main">

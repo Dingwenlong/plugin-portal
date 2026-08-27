@@ -162,7 +162,8 @@ test.describe.serial("Plugin Portal", () => {
     await expect(selectedMenu).toBeFocused();
     await expect(selectedMenu).toHaveCSS("outline-style", "none");
     await expect(selectedMenu.locator("svg")).toHaveCSS("outline-style", "none");
-    await expect(selectedMenu.locator("span")).toHaveCSS("text-decoration-line", "underline");
+    await expect(selectedMenu.locator("span")).toHaveCSS("text-decoration-line", "none");
+    await expect.poll(() => selectedMenu.evaluate((element) => getComputedStyle(element, "::after").opacity)).toBe("1");
     await selectedMenu.click();
     await expect(page.getByRole("main", { name: "Skills" })).toBeVisible();
     await expect(selectedMenu).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -381,4 +382,141 @@ test.describe.serial("Plugin Portal", () => {
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect(capsule).toHaveAttribute("data-visibility", "visible");
   });
+});
+
+test.describe("Capsule refinements", () => {
+  let portal: TestPortal;
+
+  test.beforeAll(async () => {
+    portal = await startTestPortal();
+    const candidate = await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件");
+    await portal.promote(candidate, 0);
+  });
+
+  test.afterAll(async () => {
+    await portal?.stop();
+  });
+
+  test("keeps desktop navigation centered when page actions change", async ({ page }) => {
+    for (const width of [1920, 1600, 1120, 900]) {
+      await page.setViewportSize({ width, height: 900 });
+      let menuCenter: number | undefined;
+      for (const route of ["skills", "prompts", "overview", "releases"]) {
+        await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route}`);
+        const capsule = page.getByRole("banner", { name: "插件导航" });
+        const navigation = page.getByRole("navigation", { name: "插件内容" });
+        await expect(page.getByRole("link", { name: "下载最新版 v3.7.19" })).toBeVisible();
+        const [capsuleBox, navigationBox, brandBox, actionsBox] = await Promise.all([
+          capsule.boundingBox(), navigation.boundingBox(),
+          page.locator(".portal-brand").boundingBox(), page.locator(".portal-capsule-actions").boundingBox(),
+        ]);
+        const currentCenter = navigationBox!.x + navigationBox!.width / 2;
+        expect(Math.abs(currentCenter - (capsuleBox!.x + capsuleBox!.width / 2))).toBeLessThanOrEqual(1);
+        if (menuCenter !== undefined) expect(Math.abs(currentCenter - menuCenter)).toBeLessThanOrEqual(1);
+        menuCenter = currentCenter;
+        expect(capsuleBox!.width).toBeLessThanOrEqual(1440);
+        expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(navigationBox!.x);
+        expect(navigationBox!.x + navigationBox!.width).toBeLessThanOrEqual(actionsBox!.x);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+      }
+    }
+  });
+
+  test("keeps download rightmost and shares its style with page actions", async ({ page }) => {
+    for (const width of [1600, 1120, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const [route, label] of [["overview", "配置流程"], ["prompts", "新增 Prompt"]]) {
+        await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route}`);
+        const download = page.getByRole("link", { name: "下载最新版 v3.7.19" });
+        const action = page.getByRole("button", { name: label });
+        await expect(download).toBeVisible();
+        await expect(action).toBeVisible();
+        const downloadBox = (await download.boundingBox())!;
+        for (const control of await page.locator(".portal-capsule-actions button:visible, .portal-capsule-actions a:visible").all()) {
+          const box = (await control.boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(downloadBox.x + downloadBox.width + 1);
+        }
+        for (const property of ["font-size", "font-weight", "line-height", "padding-top", "padding-right", "border-radius", "border-top-color", "background-color"]) {
+          const expected = await download.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+          await expect(action).toHaveCSS(property, expected);
+        }
+        expect(Math.abs((await action.boundingBox())!.height - downloadBox.height)).toBeLessThanOrEqual(1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+      }
+    }
+  });
+
+  test("uses one bottom indicator without a second text underline", async ({ page }) => {
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+    const menu = page.getByRole("link", { name: "Skills", exact: true });
+    await menu.click();
+    await expect(menu).toHaveAttribute("aria-current", "page");
+    await expect(menu.locator("span")).toHaveCSS("text-decoration-line", "none");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(menu).toBeFocused();
+    await expect(menu.locator("span")).toHaveCSS("text-decoration-line", "none");
+    await expect.poll(() => menu.evaluate((element) => getComputedStyle(element, "::after").opacity)).toBe("1");
+    expect(await menu.evaluate((element) => getComputedStyle(element, "::after").bottom)).toBe("0px");
+  });
+
+  test("continues scrolling after route and workflow tab switches without reloading", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 640 });
+    await page.route("**/api/plugins/*/workflows", (route) => route.fulfill({ json: {
+      revision: 1,
+      pluginKey: "company-dev/project-delivery-hub",
+      tabs: ["插件安装", "设计交付"].map((title, index) => ({
+        id: `tab-${index}`, title, sections: [{
+          id: `section-${index}`, title: `${title}流程`, steps: [{
+            id: `step-${index}`, title: `${title}步骤`, label: "准备", description: "检查公开资料。", next: [],
+          }],
+        }],
+      })),
+    } }));
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+    const capsule = page.getByRole("banner", { name: "插件导航" });
+    for (const tabName of ["设计交付", "插件安装"]) {
+      await page.getByRole("link", { name: "研发助手插件", exact: true }).click();
+      await page.getByRole("tab", { name: tabName, exact: true }).click();
+      await expect(page.getByRole("tab", { name: tabName, exact: true })).toHaveAttribute("aria-selected", "true");
+      await page.locator(".portal-content").evaluate((element) => { element.style.minHeight = "2200px"; });
+      await page.mouse.move(800, 450);
+      await page.mouse.wheel(0, 180);
+      await expect(capsule).toHaveAttribute("data-visibility", "hidden");
+      await page.mouse.wheel(0, -60);
+      await expect(capsule).toHaveAttribute("data-visibility", "visible");
+      await page.getByRole("link", { name: "Skills", exact: true }).click();
+      await expect(page.getByRole("main", { name: "Skills" })).toBeVisible();
+      await page.mouse.move(800, 450);
+      await page.mouse.wheel(0, 180);
+      await expect(capsule).toHaveAttribute("data-visibility", "hidden");
+      await page.mouse.wheel(0, -60);
+      await expect(capsule).toHaveAttribute("data-visibility", "visible");
+    }
+  });
+
+  for (const [route, label] of [["overview", "研发助手插件"], ["skills", "Skills"], ["prompts", "Prompts"], ["mcp", "MCP"], ["extensions", "扩展工具"], ["rules", "工程规范"], ["releases", "版本沿革"]]) {
+    test(`hides after mouse navigation on ${route} and preserves keyboard focus`, async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 640 });
+      await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route === "skills" ? "overview" : "skills"}`);
+      await page.getByRole("link", { name: label, exact: true }).click();
+      await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route}`);
+      await page.locator(".portal-content").evaluate((element) => { element.style.minHeight = "2200px"; });
+      const capsule = page.getByRole("banner", { name: "插件导航" });
+      await page.mouse.move(800, 450);
+      await page.mouse.wheel(0, 180);
+      await expect(capsule).toHaveAttribute("data-visibility", "hidden");
+      await expect.poll(async () => { const box = (await capsule.boundingBox())!; return box.y + box.height; }).toBeLessThan(0);
+      await page.mouse.wheel(0, -60);
+      await expect(capsule).toHaveAttribute("data-visibility", "visible");
+      await expect.poll(async () => (await capsule.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+
+      await page.getByRole("link", { name: "Skills", exact: true }).focus();
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("link", { name: "Prompts", exact: true })).toBeFocused();
+      await page.mouse.wheel(0, 180);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+      await expect(capsule).toHaveAttribute("data-visibility", "visible");
+    });
+  }
 });

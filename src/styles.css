@@ -49,11 +49,13 @@ a {
   right: clamp(16px, 2vw, 24px);
   left: clamp(16px, 2vw, 24px);
   display: grid;
-  grid-template-columns: minmax(160px, auto) minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   align-items: center;
   gap: 18px;
+  max-width: 1440px;
   min-height: 64px;
-  padding: 9px 12px 9px 14px;
+  margin-inline: auto;
+  padding: 9px 14px;
   border: 1px solid rgba(130, 151, 174, .26);
   border-radius: 999px;
   background: rgba(10, 14, 20, .78);
@@ -103,7 +105,7 @@ a {
 .portal-capsule nav a::after {
   position: absolute;
   right: 10px;
-  bottom: 3px;
+  bottom: 0;
   left: 10px;
   height: 1px;
   background: currentColor;
@@ -127,6 +129,12 @@ a {
   transform: scaleX(1);
 }
 
+.portal-capsule nav a:focus-visible::after {
+  height: 2px;
+  opacity: 1;
+  transform: scaleX(1);
+}
+
 .portal-capsule-current,
 .portal-capsule-more {
   display: none;
@@ -137,6 +145,11 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.portal-capsule-actions {
+  min-width: 0;
+  justify-self: end;
 }
 
 .portal-page-actions:empty {
@@ -203,8 +216,7 @@ select:focus-visible {
   outline-offset: 3px;
 }
 
-.portal-sidebar nav a:focus-visible span,
-.portal-capsule nav a:focus-visible span {
+.portal-sidebar nav a:focus-visible span {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -287,24 +299,38 @@ button {
   gap: 10px;
 }
 
-.portal-download-action {
-  display: inline-flex;
+.portal-download-action,
+.portal-page-action,
+.portal-capsule-more {
   align-items: center;
   gap: 7px;
+  min-height: 40px;
   padding: 9px 11px;
   border: 1px solid #394450;
   border-radius: 8px;
   color: #f4f4f5;
   background: transparent;
   font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
-.portal-download-action:hover {
+.portal-download-action,
+.portal-page-action {
+  display: inline-flex;
+}
+
+.portal-download-action:hover,
+.portal-page-action:hover,
+.portal-capsule-more:hover {
   border-color: #566576;
 }
 
-.portal-download-action:disabled {
+.portal-download-action:disabled,
+.portal-page-action:disabled,
+.portal-capsule-more:disabled {
   color: #7f8995;
   cursor: not-allowed;
 }
@@ -1105,9 +1131,25 @@ textarea {
   }
 }
 
+@media (max-width: 1279px) {
+  .portal-capsule-actions .portal-action-label {
+    display: none;
+  }
+
+  .portal-capsule-actions .portal-download-action,
+  .portal-capsule-actions .portal-page-action,
+  .portal-capsule-more {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
 @media (max-width: 899px) {
   .portal-capsule {
-    grid-template-columns: 36px minmax(0, 1fr) max-content;
+    grid-template-columns: 36px minmax(0, 1fr) 130px;
     gap: 8px;
     min-height: 58px;
     padding: 8px 10px;
@@ -1193,23 +1235,11 @@ textarea {
     top: 10px;
     right: 10px;
     left: 10px;
+    grid-template-columns: 36px minmax(0, 1fr) 124px;
   }
 
   .portal-capsule-actions {
     gap: 5px;
-  }
-
-  .portal-capsule-actions .portal-action-label {
-    display: none;
-  }
-
-  .portal-capsule-actions .portal-download-action,
-  .portal-capsule-actions .portal-page-action,
-  .portal-capsule-more {
-    width: 38px;
-    height: 38px;
-    justify-content: center;
-    padding: 0;
   }
 
   .portal-content {
