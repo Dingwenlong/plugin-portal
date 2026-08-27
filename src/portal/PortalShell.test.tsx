@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PortalShell, type PortalDataClient } from "./PortalShell";
 
@@ -159,8 +159,8 @@ describe("PortalShell", () => {
     expect(container.querySelector(".portal-sidebar")).toBeNull();
     expect(within(capsule).getByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
     expect(within(capsule).getByRole("navigation", { name: "插件内容" })).toBeInTheDocument();
-    expect(within(capsule).getByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
-    expect(within(capsule).getByRole("button", { name: "配置流程" })).toBeInTheDocument();
+    expect(await within(capsule).findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+    expect(await within(capsule).findByRole("button", { name: "配置流程" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole("main", { name: "鸟瞰全景" })).toBeInTheDocument();
   });
@@ -239,6 +239,48 @@ describe("PortalShell", () => {
     expect(capsule).toHaveAttribute("data-visibility", "visible");
     await scroll(0);
     expect(capsule).toHaveAttribute("data-visibility", "visible");
+  });
+
+  it("uses input events instead of a persistent focus-visible state to protect keyboard navigation", async () => {
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 100 });
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />);
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    const skills = within(capsule).getByRole("link", { name: /^Skills$/ });
+    const originalMatches = skills.matches.bind(skills);
+    const matches = vi.spyOn(skills, "matches").mockImplementation((selector) => (
+      selector === ":focus-visible" || originalMatches(selector)
+    ));
+    const scroll = async (position: number) => {
+      await act(async () => {
+        Object.defineProperty(window, "scrollY", { configurable: true, value: position });
+        fireEvent.scroll(window);
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      });
+    };
+
+    try {
+      fireEvent.keyDown(window, { key: "Tab" });
+      act(() => skills.focus());
+      await scroll(124);
+      expect(capsule).toHaveAttribute("data-visibility", "visible");
+
+      fireEvent.pointerDown(skills);
+      fireEvent.click(skills);
+      await scroll(148);
+      expect(capsule).toHaveAttribute("data-visibility", "hidden");
+
+      await scroll(124);
+      expect(capsule).toHaveAttribute("data-visibility", "visible");
+      fireEvent.keyDown(window, { key: "Tab" });
+      await scroll(148);
+      expect(capsule).toHaveAttribute("data-visibility", "visible");
+
+      fireEvent.pointerDown(document.body);
+      await scroll(172);
+      expect(capsule).toHaveAttribute("data-visibility", "hidden");
+    } finally {
+      matches.mockRestore();
+    }
   });
 
   it("offers the same six links from the compact navigation and restores focus when it closes", async () => {

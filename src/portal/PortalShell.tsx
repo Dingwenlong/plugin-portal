@@ -107,6 +107,7 @@ export function PortalShell({
   const downwardTravelRef = useRef(0);
   const upwardTravelRef = useRef(0);
   const scrollFrameRef = useRef<number | null>(null);
+  const keyboardInputRef = useRef(false);
   const workflowTriggerRef = useRef<HTMLButtonElement>(null);
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
@@ -127,6 +128,17 @@ export function PortalShell({
   }, [page, route.pluginId]);
 
   useEffect(() => {
+    const onKeyDown = () => { keyboardInputRef.current = true; };
+    const onPointerDown = () => { keyboardInputRef.current = false; };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
     const onScroll = () => {
       if (scrollFrameRef.current !== null) return;
       scrollFrameRef.current = window.requestAnimationFrame(() => {
@@ -137,8 +149,8 @@ export function PortalShell({
         lastScrollYRef.current = currentY;
 
         const focusedElement = document.activeElement;
-        const capsuleHasKeyboardFocus = capsuleRef.current?.contains(focusedElement)
-          && focusedElement?.matches(":focus-visible");
+        const capsuleHasKeyboardFocus = keyboardInputRef.current
+          && capsuleRef.current?.contains(focusedElement);
         if (currentY <= 24 || mobileMenuOpen || portalModalOpen || capsuleHasKeyboardFocus) {
           downwardTravelRef.current = 0;
           upwardTravelRef.current = 0;
