@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { PortalShell, type PortalDataClient } from "./PortalShell";
@@ -142,11 +142,113 @@ describe("PortalShell", () => {
   it("opens workflow configuration as a dialog from the overview only", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
     const trigger = await screen.findByRole("button", { name: "配置流程" });
-    expect(trigger.closest(".portal-header-actions")).not.toBeNull();
+    expect(trigger.closest(".portal-page-actions")).not.toBeNull();
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("replaces the sidebar and page heading with one floating capsule", async () => {
+    const { container } = render(
+      <PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />,
+    );
+
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    expect(capsule).toHaveClass("portal-capsule");
+    expect(container.querySelector(".portal-sidebar")).toBeNull();
+    expect(within(capsule).getByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
+    expect(within(capsule).getByRole("navigation", { name: "插件内容" })).toBeInTheDocument();
+    expect(within(capsule).getByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+    expect(within(capsule).getByRole("button", { name: "配置流程" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(screen.getByRole("main", { name: "鸟瞰全景" })).toBeInTheDocument();
+  });
+
+  it("mounts page-owned Prompt actions in the capsule without losing modal focus restoration", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/prompts" />);
+
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    const trigger = await within(capsule).findByRole("button", { name: "新增 Prompt" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "新增 Prompt" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("hides after sustained downward scrolling and restores on upward scrolling, focus and route changes", async () => {
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
+    const { rerender } = render(
+      <PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />,
+    );
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    expect(capsule).toHaveAttribute("data-visibility", "visible");
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 30 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 82 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "hidden"));
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 72 });
+    fireEvent.scroll(window);
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 45 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 104 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "hidden"));
+    fireEvent.focus(within(capsule).getByRole("link", { name: "Skills" }));
+    expect(capsule).toHaveAttribute("data-visibility", "visible");
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 104 });
+    rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/mcp" />);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+  });
+
+  it("offers the same six links from the compact navigation and restores focus when it closes", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/mcp" />);
+
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    expect(within(capsule).getByText("MCP", { selector: ".portal-capsule-current span" })).toBeInTheDocument();
+    const more = within(capsule).getByRole("button", { name: "打开导航菜单" });
+    const navigation = within(capsule).getByRole("navigation", { name: "插件内容" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(navigation).toHaveAttribute("data-expanded", "false");
+
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(navigation).toHaveAttribute("data-expanded", "true");
+    expect(within(navigation).getAllByRole("link")).toHaveLength(6);
+    expect(within(navigation).getByRole("link", { name: "MCP" })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(more).toHaveFocus();
+
+    fireEvent.click(more);
+    fireEvent.pointerDown(document.body);
+    expect(more).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(more);
+    fireEvent.click(within(navigation).getByRole("link", { name: "Skills" }));
+    expect(more).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("forces a hidden capsule back into view while a modal is open", async () => {
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    const trigger = await within(capsule).findByRole("button", { name: "配置流程" });
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 70 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "hidden"));
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
   });
 
   it("restores the plugin brand, navigation icons and overview download action", async () => {
@@ -165,22 +267,22 @@ describe("PortalShell", () => {
     expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
   });
 
-  it("uses the selected menu name as the page title and keeps the download at the sidebar bottom", async () => {
+  it("uses the selected menu name as the accessible main label and keeps download in the capsule", async () => {
     const { rerender } = render(
       <PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />,
     );
 
-    expect(await screen.findByRole("heading", { level: 1, name: "鸟瞰全景" })).toBeInTheDocument();
+    expect(await screen.findByRole("main", { name: "鸟瞰全景" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
     const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
-    expect(download.closest(".portal-sidebar-download")).not.toBeNull();
-    expect(download.closest(".portal-header-actions")).toBeNull();
+    expect(download.closest(".portal-capsule-actions")).not.toBeNull();
 
     rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />);
-    expect(await screen.findByRole("heading", { level: 1, name: "Skills" })).toBeInTheDocument();
+    expect(await screen.findByRole("main", { name: "Skills" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
 
     rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/releases" />);
-    expect(await screen.findByRole("heading", { level: 1, name: "版本沿革" })).toBeInTheDocument();
+    expect(await screen.findByRole("main", { name: "版本沿革" })).toBeInTheDocument();
   });
 
   it("keeps a delayed download probe after the main plugin content renders", async () => {

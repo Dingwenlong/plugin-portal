@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import { usePortalModalPresence } from "./PortalPageAction";
+
 export function PortalModal({
   title,
   onClose,
@@ -11,6 +13,7 @@ export function PortalModal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  usePortalModalPresence();
   const titleId = useId();
   const dialogRef = useRef<HTMLElement>(null);
 

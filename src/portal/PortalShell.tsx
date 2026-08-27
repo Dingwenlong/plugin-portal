@@ -1,19 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import {
   Blocks,
   BookCopy,
   Download,
   History,
+  Menu,
   MessageSquareText,
   Network,
   Package,
+  Settings2,
   Workflow as WorkflowIcon,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
 import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
 import { PortalModal } from "./PortalModal";
+import { PortalPageAction, PortalPageActionTargetProvider } from "./PortalPageAction";
 import type { PluginManagementClient } from "./PluginManager";
 import { parsePortalRoute, portalHref, type PortalPage } from "./routes";
 import type {
@@ -93,6 +97,16 @@ export function PortalShell({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState(false);
+  const [pageActionTarget, setPageActionTarget] = useState<HTMLDivElement | null>(null);
+  const [capsuleHidden, setCapsuleHidden] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [portalModalOpen, setPortalModalOpen] = useState(false);
+  const capsuleRef = useRef<HTMLElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const lastScrollYRef = useRef(0);
+  const downwardTravelRef = useRef(0);
+  const upwardTravelRef = useRef(0);
+  const scrollFrameRef = useRef<number | null>(null);
   const workflowTriggerRef = useRef<HTMLButtonElement>(null);
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
@@ -103,6 +117,72 @@ export function PortalShell({
     : sourceHash === "#/hub" ? "hub" : "cover";
   const route = parsePortalRoute(sourceHash, pluginIds);
   const page = route.page;
+
+  useEffect(() => {
+    setCapsuleHidden(false);
+    setMobileMenuOpen(false);
+    lastScrollYRef.current = window.scrollY;
+    downwardTravelRef.current = 0;
+    upwardTravelRef.current = 0;
+  }, [page, route.pluginId]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      if (scrollFrameRef.current !== null) return;
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        const currentY = window.scrollY;
+        const previousY = lastScrollYRef.current;
+        const delta = currentY - previousY;
+        lastScrollYRef.current = currentY;
+
+        const capsuleHasFocus = capsuleRef.current?.contains(document.activeElement) ?? false;
+        if (currentY <= 24 || mobileMenuOpen || portalModalOpen || capsuleHasFocus) {
+          downwardTravelRef.current = 0;
+          upwardTravelRef.current = 0;
+          setCapsuleHidden(false);
+          return;
+        }
+        if (delta > 0) {
+          upwardTravelRef.current = 0;
+          downwardTravelRef.current += delta;
+          if (downwardTravelRef.current >= 48) setCapsuleHidden(true);
+        } else if (delta < 0) {
+          downwardTravelRef.current = 0;
+          upwardTravelRef.current += Math.abs(delta);
+          if (upwardTravelRef.current >= 24) setCapsuleHidden(false);
+        }
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    };
+  }, [mobileMenuOpen, portalModalOpen]);
+
+  useEffect(() => {
+    if (portalModalOpen) setCapsuleHidden(false);
+  }, [portalModalOpen]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!capsuleRef.current?.contains(event.target as Node)) setMobileMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMobileMenuOpen(false);
+      mobileMenuTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     let active = true;
@@ -203,51 +283,78 @@ export function PortalShell({
   if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>该插件未纳入 Portal。</p></main>;
 
   const loaded = data[selectedPlugin.pluginKey];
+  const currentNavigation = NAVIGATION.find((item) => item.page === page) ?? {
+    page: "overview" as const,
+    label: PAGE_TITLES.overview,
+    icon: Package,
+  };
+  const CurrentPageIcon = currentNavigation.icon;
   return (
-    <div className="portal-layout">
-      <aside className="portal-sidebar">
-        <a className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>
-          <PluginBrandIcon pluginKey={selectedPlugin.pluginKey} />
-          <span>{selectedPlugin.name}</span>
-        </a>
-        <nav aria-label="插件内容">
-          {NAVIGATION.map((item) => (
-            <a aria-current={item.page === page ? "page" : undefined} href={portalHref(selectedPlugin.id, item.page)} key={item.page}>
-              <item.icon aria-hidden="true" size={18} strokeWidth={1.7} />
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        {loaded ? <div className="portal-sidebar-download"><DownloadAction info={loaded.download} /></div> : null}
-      </aside>
-      <main className="portal-main">
-        <header className="portal-header">
-          <h1>{PAGE_TITLES[page]}</h1>
-          <div className="portal-header-actions">
-            {loaded && page === "overview" ? (
-              <button onClick={() => setEditingWorkflow(true)} ref={workflowTriggerRef} type="button">配置流程</button>
-            ) : null}
+    <PortalPageActionTargetProvider onModalStateChange={setPortalModalOpen} target={pageActionTarget}>
+      <div className="portal-layout">
+        <header
+          aria-label="插件导航"
+          className="portal-capsule"
+          data-visibility={capsuleHidden ? "hidden" : "visible"}
+          onFocusCapture={() => setCapsuleHidden(false)}
+          ref={capsuleRef}
+        >
+          <a aria-label={selectedPlugin.name} className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>
+            <PluginBrandIcon pluginKey={selectedPlugin.pluginKey} />
+            <span>{selectedPlugin.name}</span>
+          </a>
+          <div aria-hidden="true" className="portal-capsule-current">
+            <CurrentPageIcon size={18} strokeWidth={1.7} />
+            <span>{currentNavigation.label}</span>
+          </div>
+          <nav aria-label="插件内容" data-expanded={mobileMenuOpen ? "true" : "false"} id="portal-capsule-navigation" onClick={() => setMobileMenuOpen(false)}>
+            {NAVIGATION.map((item) => (
+              <a aria-current={item.page === page ? "page" : undefined} href={portalHref(selectedPlugin.id, item.page)} key={item.page}>
+                <item.icon aria-hidden="true" size={18} strokeWidth={1.7} />
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </nav>
+          <div className="portal-capsule-actions">
+            {loaded ? <DownloadAction info={loaded.download} /> : null}
+            <div className="portal-page-actions" ref={setPageActionTarget} />
+            <button
+              aria-controls="portal-capsule-navigation"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? "关闭导航菜单" : "打开导航菜单"}
+              className="portal-capsule-more"
+              onClick={() => { setCapsuleHidden(false); setMobileMenuOpen((current) => !current); }}
+              ref={mobileMenuTriggerRef}
+              title={mobileMenuOpen ? "关闭导航菜单" : "打开导航菜单"}
+              type="button"
+            >
+              {mobileMenuOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
+            </button>
           </div>
         </header>
-        <section className="portal-content" aria-busy={!loaded}>
-          {!loaded ? <p>正在读取公开资料…</p> : renderPage({
-            page,
-            loaded,
-            editingWorkflow,
-            onCloseWorkflow: () => { setEditingWorkflow(false); workflowTriggerRef.current?.focus(); },
-            onSavePrompts: async (revision, items) => {
-              const prompts = await resolvedClient.savePrompts(selectedPlugin.pluginKey, revision, items);
-              setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], prompts } }));
-            },
-            onSaveWorkflow: async (revision, workflow) => {
-              const saved = await resolvedClient.saveWorkflows(selectedPlugin.pluginKey, revision, workflow);
-              setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], workflow: saved } }));
-              setEditingWorkflow(false);
-            },
-          })}
-        </section>
-      </main>
-    </div>
+        <main aria-label={PAGE_TITLES[page]} className="portal-main">
+          <section className="portal-content" aria-busy={!loaded}>
+            {!loaded ? <p>正在读取公开资料…</p> : renderPage({
+              page,
+              loaded,
+              editingWorkflow,
+              workflowTriggerRef,
+              onOpenWorkflow: () => setEditingWorkflow(true),
+              onCloseWorkflow: () => { setEditingWorkflow(false); workflowTriggerRef.current?.focus(); },
+              onSavePrompts: async (revision, items) => {
+                const prompts = await resolvedClient.savePrompts(selectedPlugin.pluginKey, revision, items);
+                setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], prompts } }));
+              },
+              onSaveWorkflow: async (revision, workflow) => {
+                const saved = await resolvedClient.saveWorkflows(selectedPlugin.pluginKey, revision, workflow);
+                setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], workflow: saved } }));
+                setEditingWorkflow(false);
+              },
+            })}
+          </section>
+        </main>
+      </div>
+    </PortalPageActionTargetProvider>
   );
 }
 
@@ -255,6 +362,8 @@ function renderPage({
   page,
   loaded,
   editingWorkflow,
+  workflowTriggerRef,
+  onOpenWorkflow,
   onCloseWorkflow,
   onSavePrompts,
   onSaveWorkflow,
@@ -262,13 +371,24 @@ function renderPage({
   page: PortalPage;
   loaded: LoadedPluginData;
   editingWorkflow: boolean;
+  workflowTriggerRef: RefObject<HTMLButtonElement | null>;
+  onOpenWorkflow: () => void;
   onCloseWorkflow: () => void;
   onSavePrompts: (revision: number, items: PromptItem[]) => Promise<void>;
   onSaveWorkflow: (revision: number, workflow: WorkflowValue) => Promise<void>;
 }) {
   switch (page) {
     case "overview":
-      return <><OverviewView workflow={loaded.workflow} />{editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}</>;
+      return <>
+        <PortalPageAction>
+          <button aria-label="配置流程" className="portal-page-action" onClick={onOpenWorkflow} ref={workflowTriggerRef} title="配置流程" type="button">
+            <Settings2 aria-hidden="true" size={17} />
+            <span className="portal-action-label">配置流程</span>
+          </button>
+        </PortalPageAction>
+        <OverviewView workflow={loaded.workflow} />
+        {editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}
+      </>;
     case "skills": return <SkillsView snapshot={loaded.snapshot} />;
     case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} />;
     case "mcp": return <McpView snapshot={loaded.snapshot} />;
@@ -295,7 +415,7 @@ function PluginBrandIcon({ pluginKey }: { pluginKey: string }) {
 function DownloadAction({ info }: { info: PluginDownloadInfo }) {
   const label = `下载最新版 v${info.version}`;
   if (info.available && info.href) {
-    return <a className="portal-download-action" href={info.href}><Download aria-hidden="true" size={17} />{label}</a>;
+    return <a aria-label={label} className="portal-download-action" href={info.href} title={label}><Download aria-hidden="true" size={17} /><span className="portal-action-label">{label}</span></a>;
   }
-  return <button className="portal-download-action" disabled title="该插件未提供可下载版本" type="button"><Download aria-hidden="true" size={17} />{label}</button>;
+  return <button aria-label={label} className="portal-download-action" disabled title="该插件未提供可下载版本" type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">{label}</span></button>;
 }

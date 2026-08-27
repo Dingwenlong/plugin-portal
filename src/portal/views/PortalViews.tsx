@@ -7,6 +7,7 @@ import {
   ListChecks,
   Package,
   Palette,
+  Plus,
   RefreshCw,
   Settings2,
   Sparkles,
@@ -16,6 +17,7 @@ import {
 import { useRef, useState } from "react";
 
 import { PortalModal } from "../PortalModal";
+import { PortalPageAction } from "../PortalPageAction";
 import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } from "../types";
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
 
@@ -201,7 +203,12 @@ export function PromptsView({
           </tr>)}
         </ContentTable>
       )}
-      <button className="portal-page-action" ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} type="button">新增 Prompt</button>
+      <PortalPageAction>
+        <button aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} title="新增 Prompt" type="button">
+          <Plus aria-hidden="true" size={17} />
+          <span className="portal-action-label">新增 Prompt</span>
+        </button>
+      </PortalPageAction>
       {showForm ? (
         <PortalModal onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
           <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
