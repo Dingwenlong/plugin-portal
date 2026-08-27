@@ -39,6 +39,7 @@ export function reduceEntryPhase(phase: EntryPhase, event: EntryEvent): EntryPha
 }
 
 function HubList({
+  readOnly,
   catalog,
   interactive,
   firstEntryRef,
@@ -47,6 +48,7 @@ function HubList({
 }: {
   catalog: PluginCatalog;
   interactive: boolean;
+  readOnly: boolean;
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
@@ -54,9 +56,9 @@ function HubList({
   return <main className="company-dev-hub" data-company-dev-hub aria-hidden={!interactive || undefined}>
     <h1 className="sr-only">已纳入插件</h1>
     <div className="company-dev-hub-sections">
-      <div className="company-dev-hub-toolbar">
+      {!readOnly && <div className="company-dev-hub-toolbar">
         <button ref={includeButtonRef} type="button" tabIndex={interactive ? 0 : -1} onClick={onInclude}>纳入插件</button>
-      </div>
+      </div>}
       <section className="company-dev-hub-section" data-hub-section="plugins">
         <h2>插件</h2>
         <div className="company-dev-hub-entry-list">
@@ -81,6 +83,7 @@ function HubList({
 }
 
 function GenericHubView({
+  readOnly,
   catalog,
   route,
   phase = route === "hub" ? "hub" : "idle",
@@ -95,6 +98,7 @@ function GenericHubView({
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
+  readOnly: boolean;
   phase?: EntryPhase;
   onStart?: () => void;
   onButtonAnimationEnd?: (event: AnimationEvent<HTMLButtonElement>) => void;
@@ -111,6 +115,7 @@ function GenericHubView({
 
   return <div className="hub-entry-flow" data-hub-entry-phase={effectivePhase} data-reduced-motion={reducedMotion}>
     {showHub && <HubList
+      readOnly={readOnly}
       catalog={catalog}
       interactive={effectivePhase === "hub"}
       firstEntryRef={firstEntryRef}
@@ -180,6 +185,7 @@ function HubCover({
 }
 
 function InteractiveHub({
+  readOnly,
   catalog,
   route,
   onNavigate,
@@ -187,6 +193,7 @@ function InteractiveHub({
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
+  readOnly: boolean;
   onNavigate: (route: HubRoute) => void;
   onInclude: () => void;
 }) {
@@ -289,6 +296,7 @@ function InteractiveHub({
   }, [phase]);
 
   return <GenericHubView
+    readOnly={readOnly}
     catalog={catalog}
     route={route}
     phase={phase}
@@ -306,6 +314,7 @@ function InteractiveHub({
 }
 
 export function HubEntry({
+  readOnly = false,
   catalog,
   client,
   route,
@@ -314,6 +323,7 @@ export function HubEntry({
 }: {
   catalog: PluginCatalog;
   client: PluginManagementClient;
+  readOnly?: boolean;
   route: HubRoute;
   onNavigate: (route: HubRoute) => void;
   onCatalogChanged: () => Promise<void>;
@@ -331,12 +341,13 @@ export function HubEntry({
 
   return <>
     <InteractiveHub
+      readOnly={readOnly}
       catalog={catalog}
       route={route}
       onNavigate={onNavigate}
       onInclude={() => setIncluding(true)}
     />
-    {including ? <div className="hub-plugin-dialog-backdrop">
+    {!readOnly && including ? <div className="hub-plugin-dialog-backdrop">
       <section className="hub-plugin-dialog" role="dialog" aria-modal="true" aria-label="纳入插件">
         <div className="hub-plugin-dialog-actions">
           <button type="button" onClick={() => setIncluding(false)}>关闭</button>

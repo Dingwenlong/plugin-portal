@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("serve", help="启动本机 Portal")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=9137)
+    serve.add_argument("--read-only", action="store_true", help="局域网只读模式，禁止管理和编辑")
     serve.add_argument("--data-root", type=Path, required=True)
     serve.add_argument("--web-root", type=Path, required=True)
     migrate = subparsers.add_parser("migrate-legacy", help="从旧版本机 Portal 一次性迁移资料")
@@ -48,12 +49,13 @@ def main() -> int:
             port=arguments.port,
             data_root=arguments.data_root,
             web_root=arguments.web_root,
+            read_only=arguments.read_only,
         )
     except (OSError, ServerConfigurationError) as error:
         print(f"Plugin Portal 启动失败：{error}")
         return 1
 
-    print(f"Plugin Portal 已监听 http://127.0.0.1:{server.server_address[1]}", flush=True)
+    print(f"Plugin Portal 已监听 http://{server.server_address[0]}:{server.server_address[1]}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

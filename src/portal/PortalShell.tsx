@@ -44,6 +44,7 @@ import {
 import { WorkflowEditor } from "./workflows/WorkflowEditor";
 
 export interface PortalDataClient extends PluginManagementClient {
+  getAccessMode(): Promise<{ readOnly: boolean }>;
   listPlugins(): Promise<PluginCatalog>;
   getSnapshot(pluginKey: string): Promise<PluginSnapshot>;
   getDownloadInfo(pluginKey: string): Promise<PluginDownloadInfo>;
@@ -95,6 +96,7 @@ export function PortalShell({
   const [selectedPluginId, setSelectedPluginId] = useState("");
   const [data, setData] = useState<Record<string, LoadedPluginData>>({});
   const [loading, setLoading] = useState(true);
+  const [readOnly, setReadOnly] = useState(true);
   const [error, setError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState(false);
   const [pageActionTarget, setPageActionTarget] = useState<HTMLDivElement | null>(null);
@@ -200,8 +202,9 @@ export function PortalShell({
 
   useEffect(() => {
     let active = true;
-    resolvedClient.listPlugins().then((nextCatalog) => {
+    Promise.all([resolvedClient.getAccessMode(), resolvedClient.listPlugins()]).then(([access, nextCatalog]) => {
       if (!active) return;
+      setReadOnly(access.readOnly);
       setCatalog(nextCatalog);
       const sourceHash = initialHash ?? window.location.hash;
       const nextRoute = parsePortalRoute(sourceHash, nextCatalog.items.map((item) => item.id));
@@ -281,6 +284,7 @@ export function PortalShell({
   };
 
   if (hubRoute) return <HubEntry
+    readOnly={readOnly}
     catalog={catalog}
     client={resolvedClient}
     route={hubRoute}
@@ -350,6 +354,7 @@ export function PortalShell({
           <section className="portal-content" aria-busy={!loaded}>
             {!loaded ? <p>正在读取公开资料…</p> : renderPage({
               page,
+              readOnly,
               loaded,
               editingWorkflow,
               workflowTriggerRef,
@@ -374,6 +379,7 @@ export function PortalShell({
 
 function renderPage({
   page,
+  readOnly,
   loaded,
   editingWorkflow,
   workflowTriggerRef,
@@ -383,6 +389,7 @@ function renderPage({
   onSaveWorkflow,
 }: {
   page: PortalPage;
+  readOnly: boolean;
   loaded: LoadedPluginData;
   editingWorkflow: boolean;
   workflowTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -394,17 +401,17 @@ function renderPage({
   switch (page) {
     case "overview":
       return <>
-        <PortalPageAction>
+        {!readOnly && <PortalPageAction>
           <button aria-label="配置流程" className="portal-page-action" onClick={onOpenWorkflow} ref={workflowTriggerRef} title="配置流程" type="button">
             <Settings2 aria-hidden="true" size={17} />
             <span className="portal-action-label">配置流程</span>
           </button>
-        </PortalPageAction>
+        </PortalPageAction>}
         <OverviewView workflow={loaded.workflow} />
-        {editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}
+        {!readOnly && editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}
       </>;
     case "skills": return <SkillsView snapshot={loaded.snapshot} />;
-    case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} />;
+    case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} readOnly={readOnly} />;
     case "mcp": return <McpView snapshot={loaded.snapshot} />;
     case "extensions": return <ExtensionsView snapshot={loaded.snapshot} />;
     case "rules": return <RulesView snapshot={loaded.snapshot} />;

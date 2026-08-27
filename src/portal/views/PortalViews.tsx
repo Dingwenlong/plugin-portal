@@ -141,9 +141,11 @@ export function OverviewView({ workflow }: { workflow: WorkflowDocument }) {
 export function PromptsView({
   document,
   onSave,
+  readOnly = false,
 }: {
   document: PromptDocument;
   onSave: (revision: number, items: PromptItem[]) => Promise<unknown>;
+  readOnly?: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [scenario, setScenario] = useState("");
@@ -184,10 +186,10 @@ export function PromptsView({
   return (
     <section className="prompts-view">
       {document.items.length === 0 ? <p className="empty-copy">尚未添加 Prompt</p> : (
-        <ContentTable className="prompts-table" headings={["常用场景", "Prompt", "添加时间", "操作"]}>
+        <ContentTable className="prompts-table" headings={["常用场景", "Prompt", "添加时间", ...(readOnly ? [] : ["操作"])]}>
           {document.items.map((item) => <tr key={item.id}>
             <td>{item.scenario}</td><td>{item.content}</td><td>{formatPromptTime(item.createdAt)}</td>
-            <td className="row-actions">
+            {!readOnly && <td className="row-actions">
               <button aria-label={`编辑 ${item.scenario}`} onClick={() => {
                 setEditingId(item.id); setScenario(item.scenario); setContent(item.content); setShowForm(true);
               }} type="button">编辑</button>
@@ -199,17 +201,17 @@ export function PromptsView({
                   setError(reason instanceof Error ? reason.message : "无法删除 Prompt");
                 }
               }} type="button">删除</button>
-            </td>
+            </td>}
           </tr>)}
         </ContentTable>
       )}
-      <PortalPageAction>
+      {!readOnly && <PortalPageAction>
         <button aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} title="新增 Prompt" type="button">
           <Plus aria-hidden="true" size={17} />
           <span className="portal-action-label">新增 Prompt</span>
         </button>
-      </PortalPageAction>
-      {showForm ? (
+      </PortalPageAction>}
+      {!readOnly && showForm ? (
         <PortalModal onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
           <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
             <label>常用场景<input aria-label="常用场景" data-autofocus value={scenario} onChange={(event) => setScenario(event.currentTarget.value)} /></label>

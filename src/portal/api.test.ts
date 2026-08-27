@@ -3,6 +3,23 @@ import { describe, expect, it } from "vitest";
 import { PortalClient } from "./api";
 
 describe("PortalClient", () => {
+  it("validates the server-owned access mode", async () => {
+    await expect(new PortalClient(async () => Response.json({ readOnly: true })).getAccessMode())
+      .resolves.toEqual({ readOnly: true });
+    await expect(new PortalClient(async () => Response.json({ readOnly: "false" })).getAccessMode()).rejects.toThrow();
+  });
+
+  it("accepts only the requested plugin's same-origin LAN download", async () => {
+    const key = "company-dev/sample-plugin";
+    const href = `/api/plugins/${encodeURIComponent(key)}/download`;
+    await expect(new PortalClient(async () => Response.json({ available: true, version: "1.2.3", href }))
+      .getDownloadInfo(key)).resolves.toMatchObject({ href });
+    for (const invalid of ["/api/plugins/company-dev%2Fother/download", "//example.test/download", href + "?url=private"]) {
+      await expect(new PortalClient(async () => Response.json({ available: true, version: "1.2.3", href: invalid }))
+        .getDownloadInfo(key)).rejects.toThrow();
+    }
+  });
+
   it("parses a closed plugin catalog", async () => {
     const client = new PortalClient(async () =>
       Response.json({

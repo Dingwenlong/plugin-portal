@@ -12,6 +12,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--web-root", type=Path, required=True)
     parser.add_argument("--picker-root", type=Path, required=True)
+    parser.add_argument("--read-only", action="store_true")
     arguments = parser.parse_args()
     server = create_server(
         host="127.0.0.1",
@@ -19,6 +20,7 @@ def main() -> None:
         data_root=arguments.data_root,
         web_root=arguments.web_root,
         test_only=True,
+        read_only=arguments.read_only,
         directory_picker=lambda: arguments.picker_root,
     )
     server.api.download_probe = lambda url: "project-delivery-hub" in url

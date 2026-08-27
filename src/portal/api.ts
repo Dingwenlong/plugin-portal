@@ -19,6 +19,14 @@ export class PortalClient {
 
   constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
 
+  async getAccessMode(): Promise<{ readOnly: boolean }> {
+    const value = await this.request("/api/access");
+    if (!isClosedRecord(value, ["readOnly"]) || typeof value.readOnly !== "boolean") {
+      throw new Error("无法确认访问模式");
+    }
+    return { readOnly: value.readOnly };
+  }
+
   async listPlugins(): Promise<PluginCatalog> {
     const value = await this.request("/api/plugins");
     if (!isPluginCatalog(value)) throw new Error("插件目录回应无效");
@@ -38,7 +46,7 @@ export class PortalClient {
       typeof value.available !== "boolean" ||
       !isText(value.version) ||
       (value.available
-        ? !isLocalZipUrl(value.href)
+        ? !isLocalZipUrl(value.href) && value.href !== this.pluginUrl(pluginKey, "download")
         : value.href !== null)
     ) {
       throw new Error("下载资料回应无效");

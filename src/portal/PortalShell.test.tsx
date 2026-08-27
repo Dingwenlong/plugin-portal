@@ -21,6 +21,7 @@ function createClient(): PortalDataClient {
     },
   ];
   return {
+    getAccessMode: async () => ({ readOnly: false }),
     listPlugins: async () => ({ revision: 2, items: plugins }),
     getSnapshot: async (pluginKey) => ({
       schemaVersion: "1.0.0",
@@ -71,6 +72,30 @@ function createClient(): PortalDataClient {
 }
 
 describe("PortalShell", () => {
+  it.each(["#/hub", "#/plugins/project-delivery-hub/overview", "#/plugins/project-delivery-hub/prompts"])(
+    "keeps LAN content readable without management controls at %s", async (initialHash) => {
+      const client = createClient();
+      client.getAccessMode = async () => ({ readOnly: true });
+      render(<PortalShell client={client} initialHash={initialHash} />);
+      if (initialHash.endsWith("prompts")) {
+        expect(await screen.findByText("研发 Prompt")).toBeInTheDocument();
+      } else if (initialHash.endsWith("overview")) {
+        expect(await screen.findByRole("main", { name: "鸟瞰全景" })).toBeInTheDocument();
+      } else {
+        expect(await screen.findByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
+      }
+      expect(screen.queryByRole("button", { name: /纳入插件|配置流程|新增 Prompt|编辑|删除/ })).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not enable editing when access metadata fails", async () => {
+    const client = createClient();
+    client.getAccessMode = async () => { throw new Error("无法确认访问模式"); };
+    render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/prompts" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("无法确认访问模式");
+    expect(screen.queryByRole("button", { name: "新增 Prompt" })).not.toBeInTheDocument();
+  });
+
   it("keeps the original cover as the canonical root entry", async () => {
     const { container } = render(
       <PortalShell

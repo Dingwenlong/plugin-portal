@@ -5,14 +5,17 @@ import mimetypes
 import os
 import re
 import stat
+import ipaddress
+import http.client
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from .api import ApiError, PortalApi
 from .directory_picker import choose_plugin_directory
+from .lan_download import read_download
 from .storage import PortalStore
 
 
@@ -23,9 +26,11 @@ class ServerConfigurationError(ValueError):
 class PortalHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], api: PortalApi, web_root: Path):
+    def __init__(self, address: tuple[str, int], api: PortalApi, web_root: Path, *, read_only: bool = False):
         self.api = api
         self.web_root = web_root
+        self.read_only = read_only
+        self.public_files = _public_static_files(web_root) if read_only else {}
         super().__init__(address, PortalRequestHandler)
 
 
@@ -36,16 +41,27 @@ def create_server(
     data_root: Path | str,
     web_root: Path | str,
     test_only: bool = False,
+    read_only: bool = False,
     directory_picker=choose_plugin_directory,
 ) -> PortalHTTPServer:
-    if host != "127.0.0.1":
+    if read_only and not test_only:
+        try:
+            address = ipaddress.IPv4Address(host)
+        except ipaddress.AddressValueError:
+            raise ServerConfigurationError("只读 Portal 必须绑定明确的局域网 IPv4 地址") from None
+        if not any(address in ipaddress.IPv4Network(network)
+                   for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")) or port != 9135:
+            raise ServerConfigurationError("只读 Portal 必须绑定局域网地址及 9135 端口")
+    elif host != "127.0.0.1":
         raise ServerConfigurationError("Portal 只允许绑定 127.0.0.1")
     if test_only:
         if port != 0:
             raise ServerConfigurationError("测试模式必须使用系统分配的临时端口")
-    elif port != 9137:
+    elif not read_only and port != 9137:
         raise ServerConfigurationError("正式 Portal 端口必须是 9137")
 
+    if read_only and not Path(data_root).is_dir():
+        raise ServerConfigurationError("只读 Portal 需要已存在的本机资料目录")
     root = Path(web_root).expanduser().absolute()
     try:
         info = os.lstat(root)
@@ -57,7 +73,31 @@ def create_server(
         (host, port),
         PortalApi(PortalStore(data_root), directory_picker=directory_picker),
         root,
+        read_only=read_only,
     )
+
+
+def _public_static_files(root: Path) -> dict[str, tuple[str, bytes]]:
+    # Freeze only the built page and assets, never expose arbitrary files from the runtime directory.
+    files: dict[str, tuple[str, bytes]] = {}
+    allowed = {".js", ".css", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff", ".woff2"}
+    for candidate in root.rglob("*"):
+        info = candidate.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ServerConfigurationError("静态资料不能包含链接目录或文件")
+        if not candidate.is_file():
+            continue
+        relative = candidate.relative_to(root).as_posix()
+        if relative != "index.html" and not (relative.startswith("assets/") and candidate.suffix in allowed):
+            continue
+        if info.st_size > 32 * 1024 * 1024:
+            raise ServerConfigurationError("静态资料过大")
+        mime = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        files["/" + relative] = (mime, candidate.read_bytes())
+    if "/index.html" not in files:
+        raise ServerConfigurationError("静态首页不存在")
+    files["/"] = files["/index.html"]
+    return files
 
 
 class PortalRequestHandler(BaseHTTPRequestHandler):
@@ -68,6 +108,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
     _SNAPSHOT = re.compile(r"^/api/plugins/([^/]+)/snapshot$")
     _ICON = re.compile(r"^/api/plugins/([^/]+)/icon$")
     _DOWNLOAD_INFO = re.compile(r"^/api/plugins/([^/]+)/download-info$")
+    _DOWNLOAD = re.compile(r"^/api/plugins/([^/]+)/download$")
     _PROMPTS = re.compile(r"^/api/plugins/([^/]+)/prompts$")
     _WORKFLOWS = re.compile(r"^/api/plugins/([^/]+)/workflows$")
 
@@ -76,8 +117,11 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
             return
         path = urlsplit(self.path).path
+        if path == "/api/access":
+            self._send_json(HTTPStatus.OK, {"readOnly": self.server.read_only})
+            return
         if path == "/api/plugins":
-            self._send_json(HTTPStatus.OK, self.server.api.list_plugins())
+            self._call_api(self.server.api.list_plugins)
             return
         match = self._SNAPSHOT.fullmatch(path)
         if match:
@@ -94,7 +138,11 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             return
         match = self._DOWNLOAD_INFO.fullmatch(path)
         if match:
-            self._call_api(lambda: self.server.api.get_download_info(unquote(match.group(1))))
+            self._call_api(lambda: self._download_info(unquote(match.group(1))))
+            return
+        match = self._DOWNLOAD.fullmatch(path)
+        if match and self.server.read_only:
+            self._download(unquote(match.group(1)))
             return
         for pattern, operation in (
             (self._PROMPTS, self.server.api.get_prompts),
@@ -103,17 +151,27 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             match = pattern.fullmatch(path)
             if match:
                 plugin_key = unquote(match.group(1))
-                self._call_api(lambda operation=operation: operation(plugin_key))
+                def read_document(operation=operation):
+                    if self.server.read_only:
+                        self.server.api.get_snapshot(plugin_key)
+                    return operation(plugin_key)
+                self._call_api(read_document)
                 return
         self._serve_static(path)
 
     def do_HEAD(self) -> None:  # noqa: N802
+        if self.server.read_only:
+            self.do_GET()
+            return
         if not self._same_origin():
             self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
             return
         self._serve_static(urlsplit(self.path).path, send_body=False)
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.server.read_only:
+            self._deny_write()
+            return
         if not self._same_origin():
             self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
             return
@@ -151,10 +209,53 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self._send_error(HTTPStatus.NOT_FOUND, "not_found", "页面不存在")
 
     def _same_origin(self) -> bool:
+        if self.server.read_only:
+            expected_host = f"{self.server.server_address[0]}:{self.server.server_address[1]}"
+            if self.headers.get_all("Host") != [expected_host]:
+                return False
         origin = self.headers.get("Origin")
         if origin is None:
             return True
         return origin == f"http://{self.headers.get('Host', '')}"
+
+    def _deny_write(self) -> None:
+        self.close_connection = True
+        self._send_error(HTTPStatus.FORBIDDEN, "read_only", "局域网 Portal 仅供阅读，请在本机管理资料")
+
+    def do_PUT(self) -> None:  # noqa: N802
+        self._deny_write() if self.server.read_only else self._send_error(405, "method_not_allowed", "不支持此操作")
+
+    do_PATCH = do_PUT
+    do_DELETE = do_PUT
+
+    def _download_info(self, plugin_key: str) -> dict[str, Any]:
+        info = self.server.api.get_download_info(plugin_key)
+        if self.server.read_only and info["available"]:
+            info["href"] = f"/api/plugins/{quote(plugin_key, safe='')}/download"
+        return info
+
+    def _download(self, plugin_key: str) -> None:
+        try:
+            info = self.server.api.get_download_info(plugin_key)
+            if not info["available"]:
+                raise ApiError("该插件未提供可下载版本", status=404, code="download_unavailable")
+            payload, length = read_download(info["href"], head_only=self.command == "HEAD")
+        except ApiError as error:
+            self._send_api_error(error)
+            return
+        except (OSError, ValueError, http.client.HTTPException):
+            self._send_error(502, "download_unavailable", "下载服务暂时不可用")
+            return
+        filename = urlsplit(info["href"]).path.rsplit("/", 1)[-1]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(payload)
 
     def _read_json_body(self) -> object:
         try:
@@ -177,6 +278,13 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self._send_json(status, value)
 
     def _serve_static(self, request_path: str, *, send_body: bool = True) -> None:
+        if self.server.read_only:
+            asset = self.server.public_files.get(request_path)
+            if asset is None:
+                self._send_error(404, "not_found", "页面不存在")
+                return
+            self._send_bytes(200, asset[1], asset[0])
+            return
         decoded = unquote(request_path)
         relative = "index.html" if decoded == "/" else decoded.lstrip("/")
         path = PurePosixPath(relative)
@@ -214,7 +322,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(payload)
+        if self.command != "HEAD":
+            self.wfile.write(payload)
 
     def _send_bytes(self, status: int | HTTPStatus, payload: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -223,7 +332,8 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
-        self.wfile.write(payload)
+        if self.command != "HEAD":
+            self.wfile.write(payload)
 
     def log_message(self, format: str, *args: object) -> None:
         return

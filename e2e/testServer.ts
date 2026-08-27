@@ -28,6 +28,7 @@ export interface TestPortal {
   preparePlugin(id: string, version: string, displayName: string): string;
   preparePickerPlugin(version: string): void;
   seedUserContent(): Promise<void>;
+  startReadOnly(): Promise<string>;
   stop(): Promise<void>;
 }
 
@@ -71,6 +72,7 @@ export async function startTestPortal(): Promise<TestPortal> {
     { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] },
   );
   const lineReader = createInterface({ input: server.stdout });
+  const readers: ReturnType<typeof spawn>[] = [];
   const firstLine = await Promise.race([
     new Promise<string>((resolveLine, rejectLine) => {
       lineReader.once("line", resolveLine);
@@ -161,7 +163,30 @@ export async function startTestPortal(): Promise<TestPortal> {
         },
       });
     },
+    startReadOnly: async () => {
+      const reader = spawn(process.env.PYTHON ?? "python", [
+        "-m", "e2e.run_test_server", "--data-root", dataRoot,
+        "--web-root", process.env.PORTAL_TEST_WEB_ROOT ?? join(repositoryRoot, "dist"),
+        "--picker-root", pickerPluginRoot, "--read-only",
+      ], { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] });
+      readers.push(reader);
+      const lines = createInterface({ input: reader.stdout });
+      const readyLine = await new Promise<string>((resolveLine, rejectLine) => {
+        const timeout = setTimeout(() => rejectLine(new Error("只读测试服务启动超时")), 10_000);
+        lines.once("line", (line) => { clearTimeout(timeout); resolveLine(line); });
+        reader.once("exit", () => { clearTimeout(timeout); rejectLine(new Error("只读测试服务提前退出")); });
+      });
+      lines.close();
+      return `http://127.0.0.1:${(JSON.parse(readyLine) as { port: number }).port}`;
+    },
     stop: async () => {
+      for (const reader of readers) {
+        if (reader.exitCode === null) {
+          const exited = new Promise<void>((resolveExit) => reader.once("exit", () => resolveExit()));
+          reader.kill();
+          await exited;
+        }
+      }
       if (!server.killed) server.kill();
       await Promise.race([
         new Promise<void>((resolveExit) => server.once("exit", () => resolveExit())),
