@@ -64,7 +64,7 @@ export async function startTestPortal(): Promise<TestPortal> {
       "--data-root",
       dataRoot,
       "--web-root",
-      join(repositoryRoot, "dist"),
+      process.env.PORTAL_TEST_WEB_ROOT ?? join(repositoryRoot, "dist"),
       "--picker-root",
       pickerPluginRoot,
     ],

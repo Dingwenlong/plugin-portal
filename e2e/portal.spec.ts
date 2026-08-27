@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import { startTestPortal, type TestPortal } from "./testServer";
 
+// Keep classic scrollbars visible so long/short page changes exercise their layout space.
+test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
 test.describe.serial("Plugin Portal", () => {
   let portal: TestPortal;
 
@@ -21,6 +24,7 @@ test.describe.serial("Plugin Portal", () => {
     });
     await page.goto(`${portal.baseUrl}/#/`);
     await expect(page.locator(".hub-cover")).toBeVisible();
+    await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
     const startButton = page.getByRole("button", { name: "Start" });
     const loadingOverlay = page.locator("[data-cover-loading-overlay]");
     await expect(startButton).toBeVisible();
@@ -42,6 +46,7 @@ test.describe.serial("Plugin Portal", () => {
     await startButton.click();
     await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
     await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
     await expect(page.getByRole("button", { name: /^管理 / })).toHaveCount(0);
     expect(Date.now() - transitionStartedAt).toBeLessThan(3_000);
     await page.getByRole("button", { name: "纳入插件" }).click();
@@ -395,6 +400,86 @@ test.describe("Capsule refinements", () => {
 
   test.afterAll(async () => {
     await portal?.stop();
+  });
+
+  test("keeps capsule geometry stable as plugin page scrollbars appear and disappear", async ({ page }) => {
+    const browserErrors: string[] = [];
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+    await page.route("**/api/plugins/*/snapshot", async (route) => {
+      const response = await route.fetch();
+      const snapshot = await response.json();
+      await route.fulfill({ response, json: {
+        ...snapshot,
+        skills: Array.from({ length: 36 }, (_, index) => ({
+          id: `sample-skill-${index}`, name: `示例技能 ${index}`, description: "查询经过筛选的公开资料。",
+        })),
+      } });
+    });
+
+    for (const width of [1920, 1600, 1120, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+      await expect(page.getByRole("row")).toHaveCount(37);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight > document.documentElement.clientHeight)).toBe(true);
+      expect(await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth)).toBeGreaterThan(0);
+      const capsule = page.getByRole("banner", { name: "插件导航" });
+      const longPageBox = (await capsule.boundingBox())!;
+
+      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      await page.getByRole("link", { name: "Prompts", exact: true }).click();
+      await expect(page.getByRole("main", { name: "Prompts", exact: true })).toBeVisible();
+      await expect(page.getByText("尚未添加 Prompt", { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollHeight > document.documentElement.clientHeight)).toBe(false);
+      const shortPageBox = (await capsule.boundingBox())!;
+      expect(Math.abs(shortPageBox.x - longPageBox.x), `capsule x at ${width}px`).toBeLessThanOrEqual(1);
+      expect(Math.abs(shortPageBox.width - longPageBox.width), `capsule width at ${width}px`).toBeLessThanOrEqual(1);
+      await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "stable both-edges");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+
+      const addPrompt = page.getByRole("button", { name: "新增 Prompt", exact: true });
+      await addPrompt.click();
+      const dialog = page.getByRole("dialog", { name: "新增 Prompt" });
+      await expect(dialog).toBeVisible();
+      expect(Math.abs((await capsule.boundingBox())!.x - longPageBox.x)).toBeLessThanOrEqual(1);
+      expect(await dialog.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(addPrompt).toBeFocused();
+
+      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      await page.getByRole("link", { name: "Skills", exact: true }).click();
+      await expect(page.getByRole("row")).toHaveCount(37);
+      const returnedBox = (await capsule.boundingBox())!;
+      expect(Math.abs(returnedBox.x - longPageBox.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(returnedBox.width - longPageBox.width)).toBeLessThanOrEqual(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    }
+    expect(browserErrors).toEqual([]);
+  });
+
+  test("keeps every menu label width and weight unchanged when selection changes", async ({ page }) => {
+    const names = ["Skills", "Prompts", "MCP", "扩展工具", "工程规范", "版本沿革"];
+    for (const width of [1600, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+      await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeVisible();
+      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      const originalBoxes = await Promise.all(names.map((name) => page.getByRole("link", { name, exact: true }).boundingBox()));
+      for (const selectedName of names) {
+        const selectedMenu = page.getByRole("link", { name: selectedName, exact: true });
+        await selectedMenu.click();
+        await expect(page.getByRole("main", { name: selectedName, exact: true })).toBeVisible();
+        if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+        await expect(selectedMenu).toHaveAttribute("aria-current", "page");
+        for (const [index, name] of names.entries()) {
+          const menu = page.getByRole("link", { name, exact: true });
+          await expect(menu).toHaveCSS("font-weight", "600");
+          const box = (await menu.boundingBox())!;
+          expect(Math.abs(box.x - originalBoxes[index]!.x), `${name} x with ${selectedName} selected`).toBeLessThanOrEqual(1);
+          expect(Math.abs(box.width - originalBoxes[index]!.width), `${name} width with ${selectedName} selected`).toBeLessThanOrEqual(1);
+        }
+      }
+    }
   });
 
   test("keeps desktop navigation centered when page actions change", async ({ page }) => {

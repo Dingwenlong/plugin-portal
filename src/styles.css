@@ -38,6 +38,14 @@ a {
   color: inherit;
 }
 
+html:has(.portal-layout) {
+  scrollbar-gutter: stable both-edges;
+}
+
+body:has(.portal-layout) {
+  min-width: 0;
+}
+
 .portal-layout {
   min-height: 100vh;
 }
@@ -98,6 +106,7 @@ a {
   border: 0;
   color: var(--muted);
   background: transparent;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -118,10 +127,6 @@ a {
 .portal-capsule nav a:hover,
 .portal-capsule nav a[aria-current="page"] {
   color: var(--text);
-}
-
-.portal-capsule nav a[aria-current="page"] {
-  font-weight: 720;
 }
 
 .portal-capsule nav a[aria-current="page"]::after {
@@ -1173,7 +1178,7 @@ textarea {
     gap: 7px;
     color: var(--text);
     font-size: 14px;
-    font-weight: 720;
+    font-weight: 600;
     white-space: nowrap;
   }
 
