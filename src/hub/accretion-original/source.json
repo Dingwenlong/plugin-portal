@@ -1,0 +1,19 @@
+{
+  "title": "Accretion by Xor",
+  "author": "jcponcemath (Juan Carlos Ponce Campuzano)",
+  "source": "https://openprocessing.org/@jcponcemath/2696126",
+  "originalCredit": "Accretion by XorDev — https://www.shadertoy.com/view/WcKXDV",
+  "license": "CC BY-NC-SA 3.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-nc-sa/3.0/",
+  "p5Version": "1.11.8",
+  "retrieved": "2026-08-28",
+  "extraction": "OpenProcessing public code editor; five source tabs retained. LF line endings and trailing whitespace normalized; hashes describe these retained files, not a downloaded archive.",
+  "runtime": "Only vertex.glsl and fragment.glsl are imported as text. The HTML, CSS and global-mode JavaScript are reference-only and are not executed or served.",
+  "sha256": {
+    "fragment.glsl": "f20ff70d2988c0dd89bce976da5e3372da3b90136d3363ec7969e6c0534f5888",
+    "index.html": "9358791f542bc811cd9ca02c4feb5a234c35bad271325dbbd899a3466d9b32df",
+    "mySketch.js": "da18d4ef8fdaf63a51f15558214200b94374f4d0c41e422164a2a696db4c3af5",
+    "style.css": "02d8fc65f862af72736422a6357bf3845067e921b4bb111f5d8951eb686b2b49",
+    "vertex.glsl": "900b393d458f9492618075cfd4bd2bebcf8bd5aa52548326b59d730122f9e595"
+  }
+}

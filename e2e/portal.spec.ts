@@ -33,13 +33,14 @@ test.describe.serial("Plugin Portal", () => {
     await expect(loadingOverlay).toHaveAttribute("data-ready", "true");
     await expect(loadingOverlay).toHaveCSS("visibility", "hidden");
     await expect(startButton).toBeEnabled();
-    await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
+    // Bound original async shader compilation separately from the unchanged click-to-Hub gate.
+    await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"), { timeout: 12_000 }).not.toBe("0");
     const buttonFrameBefore = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
     await page.waitForTimeout(1_500);
     const buttonFrameAfter = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
     expect(buttonFrameAfter).toBeGreaterThan(buttonFrameBefore);
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("width", 960);
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("height", 476);
+    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("width", 1912);
+    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("height", 948);
     await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
 
     const transitionStartedAt = Date.now();
@@ -87,7 +88,7 @@ test.describe.serial("Plugin Portal", () => {
     await page.addInitScript(() => {
       const getContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function (contextId: string, ...args: unknown[]) {
-        if (contextId === "webgl") return null;
+        if (contextId === "webgl" || contextId === "webgl2" || contextId === "experimental-webgl") return null;
         return Reflect.apply(getContext, this, [contextId, ...args]);
       } as typeof HTMLCanvasElement.prototype.getContext;
     });

@@ -66,4 +66,4 @@ npm run build
 
 根地址保留背景与 Start 入口，进入 `/#/hub` 后可纳入、刷新或回滚插件。插件站点只显示当前插件内容，不提供插件切换或管理入口。点击“选择插件目录”会打开 Windows 目录选择窗口，并从插件清单自动识别名称、ID 与版本；发布者、规范路径和扩展工具位于可选的高级区域。所有变更仍通过同一套本机 loopback API、会话令牌与 revision 门禁完成。
 
-封面液态玻璃效果复用了 LerSent001 orb 的 MIT 许可实现，完整许可见 [THIRD_PARTY-LICENSE-LerSent001-orb.txt](THIRD_PARTY-LICENSE-LerSent001-orb.txt)。背景使用 XorDev 的 Blackhole shader，并按 CC BY-NC-SA 4.0 保留署名、来源与修改说明，见 [THIRD_PARTY-NOTICE-XorDev-blackhole.txt](THIRD_PARTY-NOTICE-XorDev-blackhole.txt)。两项实现都随构建打包到本机，不产生运行时远端请求。
+封面液态玻璃效果复用了 LerSent001 orb 的 MIT 许可实现，完整许可见 [THIRD_PARTY-LICENSE-LerSent001-orb.txt](THIRD_PARTY-LICENSE-LerSent001-orb.txt)。背景使用 jcponcemath 的 “Accretion by Xor” 原作 GLSL 和固定版本 p5.js 1.11.8；背景及接入修改单独遵守 CC BY-NC-SA 3.0，保留 XorDev 署名，见 [来源与修改说明](THIRD_PARTY-NOTICE-Accretion.txt) 和 [p5.js 许可](THIRD_PARTY-LICENSE-p5.txt)。仅封面按需加载本地构建资源，不使用远端 iframe、声音模块或平台脚本。原作限非商业使用，局域网部署本身不代表满足非商业条件。

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type AnimationEventHandler,
@@ -180,7 +181,7 @@ export function CoverLiquidGlassButton({
   const [animationState, setAnimationState] = useState<AnimationState>("running");
   disabledRef.current = Boolean(disabled);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (renderState !== "fallback") return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -214,14 +215,22 @@ export function CoverLiquidGlassButton({
     let readyNotified = false;
     let renderedFrames = 0;
     let startedAt = performance.now();
+    let removeListeners: (() => void) | undefined;
 
     const fail = (_error: Error) => {
       if (disposed || failed) return;
       failed = true;
+      window.clearTimeout(initializationTimeout);
       window.cancelAnimationFrame(animationFrame);
+      removeListeners?.();
       device?.destroy();
+      device = null;
       setRenderState("fallback");
     };
+    const initializationTimeout = window.setTimeout(
+      () => fail(new Error("WebGPU initialization timed out.")),
+      10_000,
+    );
 
     const start = async () => {
       const gpu = (navigator as unknown as { gpu?: GpuApi }).gpu;
@@ -231,26 +240,22 @@ export function CoverLiquidGlassButton({
       if (!gpu || !usage) throw new Error("WebGPU is unavailable.");
 
       const adapter = await gpu.requestAdapter();
+      if (disposed || failed) return;
       if (!adapter) throw new Error("A WebGPU adapter is unavailable.");
       const rendererDevice = await adapter.requestDevice();
-      device = rendererDevice;
-      if (disposed) {
+      if (disposed || failed) {
         rendererDevice.destroy();
         return;
       }
-
-      const context = (
-        canvas.getContext as unknown as (contextId: string) => GpuCanvasContext | null
-      ).call(canvas, "webgpu");
-      if (!context) throw new Error("The WebGPU canvas context is unavailable.");
+      device = rendererDevice;
 
       const format = gpu.getPreferredCanvasFormat();
-      context.configure({ device: rendererDevice, format, alphaMode: "premultiplied" });
       const shader = rendererDevice.createShaderModule({
         code: COVER_LIQUID_GLASS_BUTTON_SHADER,
         label: "portal-cover-liquid-chrome-capsule",
       });
       const compilation = await shader.getCompilationInfo();
+      if (disposed || failed) return;
       const compilationErrors = compilation.messages.filter((message) => message.type === "error");
       if (compilationErrors.length > 0) {
         throw new Error(compilationErrors.map((message) => (
@@ -267,7 +272,13 @@ export function CoverLiquidGlassButton({
           targets: [{ format }],
         },
         primitive: { topology: "triangle-list" },
-      }, () => !disposed && !disabledRef.current && device === rendererDevice);
+      }, () => !disposed && !failed && !disabledRef.current && device === rendererDevice);
+      // Bind the visible canvas only after a current pipeline is available.
+      const context = (
+        canvas.getContext as unknown as (contextId: string) => GpuCanvasContext | null
+      ).call(canvas, "webgpu");
+      if (!context) throw new Error("The WebGPU canvas context is unavailable.");
+      context.configure({ device: rendererDevice, format, alphaMode: "premultiplied" });
       const values = new Float32Array(120);
       const uniformBuffer = rendererDevice.createBuffer({
         size: values.byteLength,
@@ -284,7 +295,7 @@ export function CoverLiquidGlassButton({
       rendererDevice.addEventListener("uncapturederror", (event) => fail(asError(event)));
 
       const render = (now: number) => {
-        if (disposed || device !== rendererDevice) return;
+        if (disposed || failed || device !== rendererDevice) return;
         const bounds = canvas.getBoundingClientRect();
         const { width, height } = coverLiquidGlassBackingSize({
           clientWidth: canvas.clientWidth,
@@ -318,12 +329,13 @@ export function CoverLiquidGlassButton({
         canvas.dataset.renderedFrame = String(renderedFrames);
         if (!readyNotified) {
           readyNotified = true;
+          window.clearTimeout(initializationTimeout);
           setRenderState("ready");
         }
       };
 
       const animate = (now: number) => {
-        if (disposed || motionQuery.matches || disabledRef.current) return;
+        if (disposed || failed || motionQuery.matches || disabledRef.current) return;
         try {
           render(now);
           animationFrame = window.requestAnimationFrame(animate);
@@ -368,13 +380,14 @@ export function CoverLiquidGlassButton({
       };
     };
 
-    let removeListeners: (() => void) | undefined;
     start().then((cleanup) => {
-      removeListeners = cleanup;
+      if (disposed || failed) cleanup?.();
+      else removeListeners = cleanup;
     }).catch((error) => fail(asError(error)));
 
     return () => {
       disposed = true;
+      window.clearTimeout(initializationTimeout);
       window.cancelAnimationFrame(animationFrame);
       removeListeners?.();
       device?.destroy();

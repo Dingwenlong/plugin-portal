@@ -1,0 +1,39 @@
+Accretion by Xor — jcponcemath (Juan Carlos Ponce Campuzano)
+Source: https://openprocessing.org/@jcponcemath/2696126
+License: Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported
+https://creativecommons.org/licenses/by-nc-sa/3.0/
+Legal code: https://creativecommons.org/licenses/by-nc-sa/3.0/legalcode
+
+The original shader also credits "Accretion" by XorDev:
+https://www.shadertoy.com/view/WcKXDV
+That credit and the original author comments remain in fragment.glsl.
+
+The five original code-editor tabs are retained under
+src/hub/accretion-original. source.json records provenance and SHA-256
+checksums of the retained text (LF line endings, trailing whitespace removed).
+The algorithm, constants, palette and iTime rate are unchanged.
+
+Adaptation for Plugin Portal:
+- local p5.js 1.11.8 instance-mode host and bundled raw shader imports;
+- React mounting, first-frame readiness and initialization timeout/fallback;
+- resizing both canvases, visibility/reduced-motion pause and cleanup;
+- freeze on the existing Start transition, without changing shader time speed.
+These background adaptations in CoverAccretionSketch.ts,
+CoverAccretionBackground.tsx and CoverAccretionFieldShader.ts are also
+available under CC BY-NC-SA 3.0, separately from the Portal's own license.
+No p5.sound or OpenProcessing platform scripts are loaded at runtime.
+
+Use of this artwork is restricted to noncommercial purposes. LAN hosting
+does not by itself establish noncommercial use. Retain attribution and this
+license notice; sharing adaptations must respect the ShareAlike terms.
+No endorsement by the original authors is implied.
+
+p5.js 1.11.8 is a separate unmodified dependency:
+https://github.com/processing/p5.js/tree/v1.11.8
+Copyright (c) the p5.js contributors.
+GNU LGPL 2.1; full license in THIRD_PARTY-LICENSE-p5.txt.
+Its source is supplied by the pinned npm package and the upstream tag;
+the application imports it as a replaceable dependency, not copied code.
+
+The liquid Start button retains its separate LerSent001 orb MIT license
+in THIRD_PARTY-LICENSE-LerSent001-orb.txt.

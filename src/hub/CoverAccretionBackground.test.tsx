@@ -1,89 +1,113 @@
 import { act, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CoverAccretionBackground } from "./CoverAccretionBackground";
 
-import {
-  COVER_ACCRETION_FRAME_INTERVAL_MS,
-  CoverAccretionBackground,
-  coverAccretionBackingSize,
-} from "./CoverAccretionBackground";
+const mock = vi.hoisted(() => ({
+  mount: vi.fn(),
+  dispose: vi.fn(),
+  setFrozen: vi.fn(),
+}));
+vi.mock("./CoverAccretionSketch", () => ({ mountAccretionSketch: mock.mount }));
 
-afterEach(() => vi.restoreAllMocks());
-
-function coverWebGlContext() {
-  return {
-    VERTEX_SHADER: 1,
-    FRAGMENT_SHADER: 2,
-    COMPILE_STATUS: 3,
-    LINK_STATUS: 4,
-    ARRAY_BUFFER: 5,
-    STATIC_DRAW: 6,
-    FLOAT: 7,
-    TRIANGLES: 8,
-    createShader: () => ({}),
-    shaderSource: () => undefined,
-    compileShader: () => undefined,
-    getShaderParameter: () => true,
-    deleteShader: () => undefined,
-    createProgram: () => ({}),
-    attachShader: () => undefined,
-    linkProgram: () => undefined,
-    getProgramParameter: () => true,
-    deleteProgram: () => undefined,
-    createBuffer: () => ({}),
-    getAttribLocation: () => 0,
-    getUniformLocation: () => ({}),
-    bindBuffer: () => undefined,
-    bufferData: () => undefined,
-    useProgram: () => undefined,
-    enableVertexAttribArray: () => undefined,
-    vertexAttribPointer: () => undefined,
-    viewport: () => undefined,
-    uniform2f: () => undefined,
-    uniform1f: () => undefined,
-    drawArrays: () => undefined,
-    deleteBuffer: () => undefined,
-  } as unknown as WebGLRenderingContext;
-}
-
-describe("cover accretion render budget", () => {
-  it("caps a full-HD cover to a low-cost backing surface", () => {
-    expect(coverAccretionBackingSize(1912, 948)).toEqual({ width: 960, height: 476 });
-    expect(coverAccretionBackingSize(768, 1024)).toEqual({ width: 405, height: 540 });
+let callbacks: { onFrame(): void; onFailure(): void; onAnimationState(state: string): void };
+beforeEach(() => {
+  mock.dispose.mockReset();
+  mock.setFrozen.mockReset();
+  mock.mount.mockReset().mockImplementation((_host, options) => {
+    callbacks = options;
+    return { dispose: mock.dispose, setFrozen: mock.setFrozen };
   });
+});
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+async function loadModule() { await act(async () => { await vi.dynamicImportSettled(); }); }
 
-  it("limits the ambient shader to 24 frames per second", () => {
-    expect(COVER_ACCRETION_FRAME_INTERVAL_MS).toBeCloseTo(1000 / 24);
-  });
-
-  it("reports readiness only after the WebGL background draws its first frame", () => {
-    const gl = coverWebGlContext();
-    let scheduledFrame: FrameRequestCallback | undefined;
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(gl);
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      scheduledFrame = callback;
-      return 1;
-    });
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+describe("cover loading lifecycle", () => {
+  it("does not release the mask just because the module or p5 constructor is ready", async () => {
     const onReady = vi.fn();
-
     const { container } = render(<CoverAccretionBackground onReady={onReady} />);
-
+    await loadModule();
+    expect(mock.mount).toHaveBeenCalledOnce();
     expect(onReady).not.toHaveBeenCalled();
-    expect(container.querySelector("canvas")).toHaveAttribute("data-render-state", "loading");
-
-    act(() => scheduledFrame?.(16));
-
-    expect(container.querySelector("canvas")).toHaveAttribute("data-render-state", "ready");
-    expect(container.querySelector("canvas")).toHaveAttribute("data-rendered-frame", "1");
+    expect(container.firstChild).toHaveAttribute("data-render-state", "loading");
+    act(() => callbacks.onFrame());
+    expect(container.firstChild).toHaveAttribute("data-render-state", "ready");
+    expect(onReady).toHaveBeenCalledTimes(1);
+    act(() => callbacks.onFrame());
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  it("releases the cover when WebGL falls back to the static background", () => {
+  it("falls back on compilation failure and ignores late frames", async () => {
     const onReady = vi.fn();
-
     const { container } = render(<CoverAccretionBackground onReady={onReady} />);
-
+    await loadModule();
+    act(() => callbacks.onFailure());
+    expect(mock.dispose).toHaveBeenCalledOnce();
     expect(container.querySelector("canvas")).toHaveAttribute("data-render-state", "fallback");
+    act(() => callbacks.onFrame());
+    expect(container.firstChild).toHaveAttribute("data-render-state", "fallback");
     expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases a failed module initialization", async () => {
+    mock.mount.mockImplementation(() => { throw new Error("initialization failed"); });
+    const onReady = vi.fn();
+    const { container } = render(<CoverAccretionBackground onReady={onReady} />);
+    await loadModule();
+    expect(container.firstChild).toHaveAttribute("data-render-state", "fallback");
+    expect(onReady).toHaveBeenCalledOnce();
+  });
+
+  it("stops initialization at ten seconds and does not accept a late result", async () => {
+    vi.useFakeTimers();
+    const onReady = vi.fn();
+    const { container } = render(<CoverAccretionBackground onReady={onReady} />);
+    await loadModule();
+    act(() => vi.advanceTimersByTime(9_999));
+    expect(onReady).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(mock.dispose).toHaveBeenCalledOnce();
+    expect(container.firstChild).toHaveAttribute("data-render-state", "fallback");
+    act(() => { callbacks.onFrame(); callbacks.onAnimationState("running"); });
+    expect(container.firstChild).toHaveAttribute("data-animation-state", "static");
+    expect(onReady).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the deadline after a real frame and forwards freeze without reinitializing", async () => {
+    vi.useFakeTimers();
+    const { container, rerender, unmount } = render(<CoverAccretionBackground />);
+    await loadModule();
+    act(() => callbacks.onFrame());
+    rerender(<CoverAccretionBackground frozen />);
+    expect(mock.setFrozen).toHaveBeenLastCalledWith(true);
+    act(() => vi.advanceTimersByTime(10_001));
+    expect(container.firstChild).toHaveAttribute("data-render-state", "ready");
+    expect(mock.mount).toHaveBeenCalledOnce();
+    unmount();
+    expect(mock.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("freezes before the transition is painted rather than waiting for a passive effect", async () => {
+    const painted = vi.fn();
+    function Cover({ frozen }: { frozen: boolean }) {
+      useLayoutEffect(() => {
+        if (frozen) painted(mock.setFrozen.mock.lastCall?.[0]);
+      }, [frozen]);
+      return <CoverAccretionBackground frozen={frozen} />;
+    }
+    const { rerender } = render(<Cover frozen={false} />);
+    await loadModule();
+    act(() => callbacks.onFrame());
+    rerender(<Cover frozen />);
+    expect(painted).toHaveBeenCalledWith(true);
+  });
+
+  it("does not mount a module that arrives after unmount", async () => {
+    const onReady = vi.fn();
+    const { unmount } = render(<CoverAccretionBackground onReady={onReady} />);
+    unmount();
+    await loadModule();
+    expect(mock.mount).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
   });
 });

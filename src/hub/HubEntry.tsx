@@ -156,7 +156,6 @@ function HubCover({
     >
       <h1 className="sr-only">Plugin Portal</h1>
       <CoverAccretionBackground
-        intensity={effectivePhase === "engulfing" ? "surge" : "ambient"}
         frozen={effectivePhase !== "idle"}
         onReady={() => setCoverReady(true)}
       />
@@ -172,15 +171,24 @@ function HubCover({
         <span aria-hidden="true" className="hub-cover-loading-spinner" />
         <span>加载中</span>
       </div>
-      <CoverLiquidGlassButton
+      {coverReady ? <CoverLiquidGlassButton
         className={`hub-entry-button is-${effectivePhase}`}
-        disabled={!coverReady || effectivePhase !== "idle"}
+        disabled={effectivePhase !== "idle"}
         style={entryStyle}
         onClick={onStart}
         onAnimationEnd={onButtonAnimationEnd}
       >
         <span data-hub-start-size={START_DIAMETER}>Start</span>
-      </CoverLiquidGlassButton>
+      </CoverLiquidGlassButton> : <button
+        className="portal-cover-enter"
+        type="button"
+        disabled
+      >Start</button>}
+      <footer className="hub-cover-attribution">
+        <a href="https://openprocessing.org/@jcponcemath/2696126" target="_blank" rel="noreferrer">Accretion by Xor — jcponcemath</a>
+        <span aria-hidden="true"> · </span>
+        <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 3.0</a>
+      </footer>
     </main>;
 }
 
