@@ -1087,16 +1087,27 @@ textarea {
   font-size: 14px;
   font-weight: 760;
   text-shadow: none;
-  cursor: pointer;
+  cursor: default;
   box-shadow: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transform: translate(-50%, -50%);
-  transition: none;
+  transition: opacity 420ms cubic-bezier(.2, .75, .2, 1), visibility 0s linear 420ms;
+}
+
+.portal-cover-enter[data-render-state="ready"] {
+  cursor: pointer;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 420ms cubic-bezier(.2, .75, .2, 1), visibility 0s linear 0s;
 }
 
 .portal-cover-enter-canvas { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; display: block; border-radius: inherit; pointer-events: none; }
 .portal-cover-enter-label { position: relative; z-index: 1; }
 .portal-cover-enter:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
-.hub-entry-button:disabled { cursor: default; }
+.hub-entry-button:disabled { cursor: default; pointer-events: none; }
 .hub-entry-button.is-engulfing { pointer-events: none; animation: hub-entry-engulf 680ms cubic-bezier(.2, .72, .18, 1) 120ms both; }
 .hub-entry-button.is-engulfing .portal-cover-enter-label { animation: hub-entry-label-fade 120ms ease both; }
 .hub-entry-button.is-revealing { pointer-events: none; animation: hub-entry-reveal 360ms ease both; }

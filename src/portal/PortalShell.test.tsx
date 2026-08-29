@@ -191,8 +191,12 @@ describe("PortalShell", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();
-    expect(container.querySelector(".hub-cover")).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector(".hub-cover")).toBeInTheDocument());
+    const start = container.querySelector("[data-cover-liquid-glass-button]");
+    expect(start).toBeDisabled();
+    expect(start).toHaveAttribute("aria-hidden", "true");
+    expect(start).toHaveTextContent("");
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "纳入插件" })).not.toBeInTheDocument();
   });
 

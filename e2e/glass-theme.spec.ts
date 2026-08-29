@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { installMockWebGpu } from "./mockWebGpu";
 import { startTestPortal, type TestPortal } from "./testServer";
 
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
@@ -325,6 +326,7 @@ test("keeps loading and error surfaces readable under a saved light theme", asyn
 });
 
 test("keeps the original cover dark under a saved light theme", async ({ page }) => {
+  await installMockWebGpu(page);
   await page.addInitScript(() => localStorage.setItem("plugin-portal.theme", "light"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${portal.baseUrl}/#/`);

@@ -1,127 +1,110 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CoverLiquidGlassButton } from "./CoverLiquidGlassButton";
 
-const fallback = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }));
-vi.mock("./CoverLiquidGlassButtonFallback", () => ({
-  coverLiquidGlassBackingSize: () => ({ width: 112, height: 112 }),
-  startCoverLiquidGlassFallback: fallback.start,
+const renderer = vi.hoisted(() => ({
+  create: vi.fn(),
+  stop: vi.fn(),
+  options: undefined as undefined | {
+    canvas: HTMLCanvasElement;
+    getTarget: () => { params: { speed: number; style: string } };
+    onError: (error: Error) => void;
+    onReady: () => void;
+  },
 }));
 
-function pending<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((complete) => { resolve = complete; });
-  return { promise, resolve };
-}
+vi.mock("./orb/upstream/orb-renderer", () => ({
+  createOrbRenderer: renderer.create,
+}));
 
-function setupGpu() {
-  const frameCallbacks: FrameRequestCallback[] = [];
-  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-    frameCallbacks.push(callback);
-    return frameCallbacks.length;
-  });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
-  const pipeline = { getBindGroupLayout: vi.fn(() => ({})) };
-  const device = {
-    destroy: vi.fn(), addEventListener: vi.fn(),
-    lost: new Promise<never>(() => undefined),
-    createShaderModule: vi.fn(() => ({ getCompilationInfo: async () => ({ messages: [] }) })),
-    createRenderPipelineAsync: vi.fn(async () => pipeline),
-    createBuffer: vi.fn(() => ({})), createBindGroup: vi.fn(() => ({})),
-    createCommandEncoder: vi.fn(() => ({
-      beginRenderPass: () => ({ draw: vi.fn(), end: vi.fn(), setBindGroup: vi.fn(), setPipeline: vi.fn() }),
-      finish: () => ({}),
-    })),
-    queue: { writeBuffer: vi.fn(), submit: vi.fn() },
-  };
-  const adapter = { requestDevice: vi.fn(async () => device) };
-  Object.defineProperty(navigator, "gpu", { configurable: true, value: {
-    requestAdapter: async () => adapter, getPreferredCanvasFormat: () => "bgra8unorm",
-  } });
-  vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2 });
-  const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-    configure: vi.fn(), getCurrentTexture: () => ({ createView: () => ({}) }),
-  } as never);
-  return { device, adapter, pipeline, frameCallbacks, getContext };
-}
+import { CoverLiquidGlassButton } from "./CoverLiquidGlassButton";
 
 beforeEach(() => {
   vi.useFakeTimers();
-  fallback.start.mockReset().mockImplementation(({ canvas, onReady }) => {
-    canvas.dataset.renderedFrame = "1";
-    onReady();
-    return fallback.stop;
+  renderer.stop.mockReset();
+  renderer.options = undefined;
+  renderer.create.mockReset().mockImplementation((options) => {
+    renderer.options = options;
+    return renderer.stop;
   });
-  fallback.stop.mockReset();
 });
+
 afterEach(() => {
-  vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
-  Reflect.deleteProperty(navigator, "gpu");
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
-async function settle() { await act(async () => { for (let i = 0; i < 8; i += 1) await Promise.resolve(); }); }
 
-describe("liquid Start initialization lifetime", () => {
-  it("keeps the original async renderer after its first frame", async () => {
-    const { frameCallbacks, device } = setupGpu();
-    const { container, unmount } = render(<CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>);
-    await settle();
-    act(() => frameCallbacks.shift()?.(100));
-    expect(container.firstChild).toHaveAttribute("data-render-state", "ready");
-    act(() => vi.advanceTimersByTime(10_001));
-    expect(fallback.start).not.toHaveBeenCalled();
-    expect(device.queue.submit).toHaveBeenCalledOnce();
-    unmount();
+describe("Liquid Orb Start initialization lifetime", () => {
+  it("keeps the Canvas hidden and inactive until the requested orb draws its first frame", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <CoverLiquidGlassButton onClick={onClick}>Start</CoverLiquidGlassButton>,
+    );
+    const button = container.querySelector<HTMLButtonElement>("[data-cover-liquid-glass-button]")!;
+    const canvas = container.querySelector<HTMLCanvasElement>("[data-cover-liquid-glass-canvas]")!;
+
+    expect(renderer.create).toHaveBeenCalledOnce();
+    expect(renderer.options?.canvas).toBe(canvas);
+    expect(renderer.options?.getTarget()).toMatchObject({
+      state: "thinking",
+      params: { style: "particleRibbon", speed: 0.72 },
+    });
+    expect(button).toHaveAttribute("data-render-state", "loading");
+    expect(button).toHaveAttribute("data-renderer", "lersent-orb-particle-ribbon");
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-hidden", "true");
+    expect(button).toHaveTextContent("");
+    expect(canvas).toHaveAttribute("data-orb-style", "particleRibbon");
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+
+    act(() => renderer.options?.onReady());
+
+    expect(button).toHaveAttribute("data-render-state", "ready");
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute("aria-hidden");
+    expect(button).toHaveTextContent("Start");
+    expect(canvas).toHaveAttribute("data-rendered-frame", "1");
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it("uses the existing Canvas fallback at ten seconds and rejects a late pipeline", async () => {
-    const { device, pipeline, getContext } = setupGpu();
-    const compilation = pending<typeof pipeline>();
-    device.createRenderPipelineAsync.mockReturnValue(compilation.promise);
-    const { container, unmount } = render(<CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>);
-    await settle();
-    expect(getContext).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(9_999));
-    expect(fallback.start).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(container.firstChild).toHaveAttribute("data-render-state", "fallback");
-    expect(fallback.start).toHaveBeenCalledOnce();
-    expect(device.destroy).toHaveBeenCalledOnce();
-    compilation.resolve(pipeline);
-    await settle();
-    expect(device.createBuffer).not.toHaveBeenCalled();
-    expect(device.queue.submit).not.toHaveBeenCalled();
-    expect(container.firstChild).toHaveAttribute("data-render-state", "fallback");
-    unmount();
-    expect(fallback.stop).toHaveBeenCalledOnce();
+  it("stays hidden when the orb renderer fails", () => {
+    const { container } = render(
+      <CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>,
+    );
+
+    act(() => renderer.options?.onError(new Error("adapter unavailable")));
+
+    const button = container.querySelector("[data-cover-liquid-glass-button]");
+    expect(button).toHaveAttribute("data-render-state", "failed");
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-hidden", "true");
+    expect(button).toHaveTextContent("");
+    expect(renderer.stop).toHaveBeenCalledOnce();
   });
 
-  it("destroys a device that arrives after the initialization deadline", async () => {
-    const { device, adapter } = setupGpu();
-    const request = pending<typeof device>();
-    adapter.requestDevice.mockReturnValue(request.promise);
-    const { unmount } = render(<CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>);
-    await settle();
+  it("times out, ignores a late first frame and releases the renderer", () => {
+    const { container } = render(
+      <CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>,
+    );
+    const button = container.querySelector("[data-cover-liquid-glass-button]");
+
     act(() => vi.advanceTimersByTime(10_000));
-    expect(fallback.start).toHaveBeenCalledOnce();
-    request.resolve(device);
-    await settle();
-    expect(device.destroy).toHaveBeenCalledOnce();
-    expect(device.createShaderModule).not.toHaveBeenCalled();
-    unmount();
+    expect(button).toHaveAttribute("data-render-state", "failed");
+    expect(renderer.stop).toHaveBeenCalledOnce();
+
+    act(() => renderer.options?.onReady());
+    expect(button).toHaveAttribute("data-render-state", "failed");
+    expect(button).toHaveTextContent("");
   });
 
-  it("does not render or install listeners when a pipeline resolves after unmount", async () => {
-    const { device, pipeline } = setupGpu();
-    const compilation = pending<typeof pipeline>();
-    device.createRenderPipelineAsync.mockReturnValue(compilation.promise);
-    const { unmount } = render(<CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>);
-    await settle();
+  it("releases the renderer when the cover unmounts", () => {
+    const { unmount } = render(
+      <CoverLiquidGlassButton onClick={() => undefined}>Start</CoverLiquidGlassButton>,
+    );
+
     unmount();
-    compilation.resolve(pipeline);
-    await settle();
-    act(() => vi.advanceTimersByTime(10_000));
-    expect(device.queue.submit).not.toHaveBeenCalled();
-    expect(device.addEventListener).not.toHaveBeenCalled();
-    expect(fallback.start).not.toHaveBeenCalled();
+
+    expect(renderer.stop).toHaveBeenCalledOnce();
   });
 });

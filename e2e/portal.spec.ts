@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { installMockWebGpu } from "./mockWebGpu";
 import { startTestPortal, type TestPortal } from "./testServer";
 
 // Keep classic scrollbars visible so long/short page changes exercise their layout space.
@@ -14,6 +15,10 @@ test.describe.serial("Plugin Portal", () => {
 
   test.afterAll(async () => {
     await portal?.stop();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await installMockWebGpu(page);
   });
 
   test("keeps the original cover and opens plugin inclusion from the Hub", async ({ page }) => {
@@ -32,12 +37,9 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "ready");
     await expect.poll(async () => page.locator("[data-cover-accretion-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
     await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
-    // Bound original async shader compilation separately from the unchanged click-to-Hub gate.
+    // Bound the Liquid Orb first frame separately from the unchanged click-to-Hub gate.
     await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"), { timeout: 12_000 }).not.toBe("0");
-    const buttonFrameBefore = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
-    await page.waitForTimeout(1_500);
-    const buttonFrameAfter = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
-    expect(buttonFrameAfter).toBeGreaterThan(buttonFrameBefore);
+    await expect(page.locator("[data-cover-liquid-glass-canvas]")).toHaveAttribute("data-orb-style", "particleRibbon");
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("width", 1912);
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("height", 948);
     await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);

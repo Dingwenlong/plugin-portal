@@ -10,7 +10,7 @@ vi.mock("./CoverAccretionBackground", () => ({
 }));
 
 describe("HubEntry cover loading", () => {
-  it("shows and activates Start immediately without a visual loading mask", () => {
+  it("keeps Start absent and inactive until its WebGPU renderer is ready", () => {
     const { container } = render(
       <HubEntry
         catalog={{ revision: 0, items: [] }}
@@ -28,11 +28,13 @@ describe("HubEntry cover loading", () => {
 
     const status = container.querySelector("[data-cover-loading-status]");
     expect(status).not.toBeNull();
-    const start = screen.getByRole("button", { name: "Start" });
+    const start = container.querySelector("[data-cover-liquid-glass-button]");
     expect(status).toHaveClass("sr-only");
     expect(status).toHaveTextContent("正在加载封面");
-    expect(start).toBeVisible();
-    expect(start).toBeEnabled();
+    expect(screen.queryByText("Start")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+    expect(start).toBeDisabled();
+    expect(start).toHaveAttribute("aria-hidden", "true");
     expect(container.querySelector("[data-cover-liquid-glass-canvas]")).not.toBeNull();
 
     const attribution = container.querySelector(".hub-cover-attribution");
@@ -48,7 +50,8 @@ describe("HubEntry cover loading", () => {
     fireEvent.click(screen.getByTestId("finish-cover-render"));
 
     expect(container.querySelector("[data-cover-loading-status]")).toBeNull();
-    expect(screen.getByRole("button", { name: "Start" })).toBe(start);
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+    expect(container.querySelector("[data-cover-liquid-glass-button]")).toBe(start);
     expect(container.querySelector("[data-cover-liquid-glass-canvas]")).not.toBeNull();
   });
 

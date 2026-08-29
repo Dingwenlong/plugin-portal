@@ -1,14 +1,22 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { installMockWebGpu } from "./mockWebGpu";
 import { startTestPortal, type TestPortal } from "./testServer";
 
 test.describe("original cover", () => {
   let portal: TestPortal;
   test.beforeAll(async () => { portal = await startTestPortal(); });
   test.afterAll(async () => { await portal?.stop(); });
+  test.beforeEach(async ({ page }, testInfo) => {
+    if (testInfo.title.includes("WebGPU is unavailable")) return;
+    await installMockWebGpu(
+      page,
+      testInfo.title.includes("before the first WebGPU frame") ? 2_000 : 0,
+    );
+  });
 
   for (const viewport of [{ width: 1600, height: 900 }, { width: 390, height: 844 }]) {
-  test(`keeps original pixels and pure button at ${viewport.width}px`, async ({ page }, testInfo) => {
+  test(`keeps original pixels and the Canvas Liquid Orb at ${viewport.width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     const errors: string[] = [];
     const inheritedWarnings: string[] = [];
@@ -43,8 +51,8 @@ test.describe("original cover", () => {
     await expect(start).toHaveCSS("border-top-width", "0px");
     const buttonCanvas = page.locator("[data-cover-liquid-glass-canvas]");
     await expect.poll(async () => Number(await buttonCanvas.getAttribute("data-rendered-frame")), { timeout: 12_000 }).toBeGreaterThan(0);
-    const frame = Number(await buttonCanvas.getAttribute("data-rendered-frame"));
-    await expect.poll(async () => Number(await buttonCanvas.getAttribute("data-rendered-frame"))).toBeGreaterThan(frame);
+    await expect(buttonCanvas).toHaveAttribute("data-orb-style", "particleRibbon");
+    await expect(start).toHaveAttribute("data-renderer", "lersent-orb-particle-ribbon");
     await page.screenshot({ path: testInfo.outputPath("cover.png") });
     await start.focus();
     await expect(start).toHaveCSS("outline-width", "2px");
@@ -180,25 +188,51 @@ test.describe("original cover", () => {
     await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "hub", { timeout: 3_000 });
   });
 
-  test("keeps the real Canvas fallback usable when WebGPU is unavailable", async ({ page }) => {
+  test("keeps Start hidden and inactive before the first WebGPU frame, then fades it in", async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 540 });
+    await page.goto(`${portal.baseUrl}/#/`, { waitUntil: "domcontentloaded" });
+
+    const button = page.locator("[data-cover-liquid-glass-button]");
+    await expect(button).toBeAttached();
+    await expect(button).toHaveAttribute("data-render-state", "loading");
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute("aria-hidden", "true");
+    await expect(button).toHaveText("");
+    await expect(button).toHaveCSS("visibility", "hidden");
+    await expect(button).toHaveCSS("opacity", "0");
+    await expect(page.getByRole("button", { name: "Start" })).toHaveCount(0);
+    await expect(page.locator("[data-cover-liquid-glass-canvas]")).not.toHaveAttribute("data-fallback-renderer", /.+/);
+
+    await expect(button).toHaveAttribute("data-render-state", "ready", { timeout: 5_000 });
+    await expect(button).toBeEnabled();
+    await expect(button).not.toHaveAttribute("aria-hidden", "true");
+    await expect(button).toHaveText("Start");
+    await expect(button).toHaveCSS("visibility", "visible");
+    await expect(button).toHaveCSS("transition-property", /opacity/);
+    await expect.poll(async () => Number.parseFloat(await button.evaluate((element) => getComputedStyle(element).opacity)))
+      .toBeGreaterThan(0);
+    await expect(button).toHaveCSS("opacity", "1");
+    await expect(page.getByRole("button", { name: "Start" })).toBeVisible();
+  });
+
+  test("keeps the black center empty when WebGPU is unavailable", async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "gpu", { configurable: true, value: undefined });
     });
     await page.setViewportSize({ width: 768, height: 540 });
     await page.goto(`${portal.baseUrl}/#/`);
-    const start = page.getByRole("button", { name: "Start" });
-    await expect(start).toBeEnabled({ timeout: 12_000 });
-    await expect(start).toHaveAttribute("data-render-state", "fallback");
+    const start = page.locator("[data-cover-liquid-glass-button]");
+    await expect(start).toHaveAttribute("data-render-state", "failed");
+    await expect(start).toBeDisabled();
+    await expect(start).toHaveAttribute("aria-hidden", "true");
+    await expect(start).toHaveText("");
+    await expect(start).toHaveCSS("visibility", "hidden");
+    await expect(start).toHaveCSS("opacity", "0");
+    await expect(page.getByRole("button", { name: "Start" })).toHaveCount(0);
     const canvas = page.locator("[data-cover-liquid-glass-canvas]");
-    await expect(canvas).toHaveAttribute("data-fallback-renderer", "canvas-2d");
-    const frame = Number(await canvas.getAttribute("data-rendered-frame"));
-    expect(frame).toBeGreaterThan(0);
-    await expect.poll(async () => Number(await canvas.getAttribute("data-rendered-frame"))).toBeGreaterThan(frame);
-    await expect(start).toHaveAttribute("data-render-state", "fallback");
-    const started = Date.now();
-    await start.click();
-    await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "hub", { timeout: 3_000 });
-    expect(Date.now() - started).toBeLessThan(3_000);
+    await expect(canvas).not.toHaveAttribute("data-fallback-renderer", /.+/);
+    await expect(canvas).toHaveAttribute("data-rendered-frame", "0");
+    await expect(page.locator("[data-cover-accretion-background]")).toHaveCSS("background-color", "rgb(0, 0, 0)");
   });
 
   for (let iteration = 1; iteration <= 10; iteration += 1) {
@@ -206,12 +240,14 @@ test.describe("original cover", () => {
       const warm = await browser.newContext({ viewport: { width: 768, height: 540 } });
       try {
         const previous = await warm.newPage();
+        await installMockWebGpu(previous);
         await previous.goto(`${portal.baseUrl}/#/`);
         await expect(previous.locator("[data-cover-accretion-canvas]")).toBeAttached({ timeout: 12_000 });
       } finally { await warm.close(); }
       const current = await browser.newContext({ viewport: { width: 768, height: 540 } });
       try {
         const page = await current.newPage();
+        await installMockWebGpu(page);
         const errors: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto(`${portal.baseUrl}/#/`);
