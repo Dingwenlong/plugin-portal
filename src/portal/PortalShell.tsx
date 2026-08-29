@@ -9,6 +9,7 @@ import {
   Network,
   Package,
   Settings2,
+  Triangle,
   Workflow as WorkflowIcon,
   X,
   type LucideIcon,
@@ -18,6 +19,9 @@ import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
 import { PortalModal } from "./PortalModal";
 import { PortalPageAction, PortalPageActionTargetProvider } from "./PortalPageAction";
+import { PluginBrandIcon } from "./PluginBrandIcon";
+import { GlassSurface } from "./GlassSurface";
+import { PortalThemeProvider, ThemeToggle } from "./PortalTheme";
 import type { PluginManagementClient } from "./PluginManager";
 import { parsePortalRoute, portalHref, type PortalPage } from "./routes";
 import type {
@@ -90,6 +94,16 @@ export function PortalShell({
   client?: PortalDataClient;
   initialHash?: string;
 }) {
+  return <PortalThemeProvider><PortalShellContent client={client} initialHash={initialHash} /></PortalThemeProvider>;
+}
+
+function PortalShellContent({
+  client,
+  initialHash,
+}: {
+  client?: PortalDataClient;
+  initialHash?: string;
+}) {
   const resolvedClient = useMemo<PortalDataClient>(() => client ?? new PortalClient(), [client]);
   const [browserHash, setBrowserHash] = useState(() => initialHash ?? window.location.hash);
   const [catalog, setCatalog] = useState<PluginCatalog>({ revision: 0, items: [] });
@@ -102,9 +116,13 @@ export function PortalShell({
   const [pageActionTarget, setPageActionTarget] = useState<HTMLDivElement | null>(null);
   const [capsuleHidden, setCapsuleHidden] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1023px)").matches);
   const [portalModalOpen, setPortalModalOpen] = useState(false);
   const capsuleRef = useRef<HTMLElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const appearanceTriggerRef = useRef<HTMLButtonElement>(null);
+  const appearancePanelRef = useRef<HTMLDivElement>(null);
   const lastScrollYRef = useRef(0);
   const downwardTravelRef = useRef(0);
   const upwardTravelRef = useRef(0);
@@ -124,10 +142,23 @@ export function PortalShell({
   useEffect(() => {
     setCapsuleHidden(false);
     setMobileMenuOpen(false);
+    setAppearanceOpen(false);
     lastScrollYRef.current = window.scrollY;
     downwardTravelRef.current = 0;
     upwardTravelRef.current = 0;
   }, [page, route.pluginId]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1023px)");
+    const update = () => {
+      setCompact(query.matches);
+      setAppearanceOpen(false);
+      setMobileMenuOpen(false);
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = () => { keyboardInputRef.current = true; };
@@ -153,7 +184,7 @@ export function PortalShell({
         const focusedElement = document.activeElement;
         const capsuleHasKeyboardFocus = keyboardInputRef.current
           && capsuleRef.current?.contains(focusedElement);
-        if (currentY <= 24 || mobileMenuOpen || portalModalOpen || capsuleHasKeyboardFocus) {
+        if (currentY <= 24 || mobileMenuOpen || appearanceOpen || portalModalOpen || capsuleHasKeyboardFocus) {
           downwardTravelRef.current = 0;
           upwardTravelRef.current = 0;
           setCapsuleHidden(false);
@@ -176,7 +207,7 @@ export function PortalShell({
       if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
       scrollFrameRef.current = null;
     };
-  }, [mobileMenuOpen, portalModalOpen]);
+  }, [mobileMenuOpen, appearanceOpen, portalModalOpen]);
 
   useEffect(() => {
     if (portalModalOpen) setCapsuleHidden(false);
@@ -199,6 +230,25 @@ export function PortalShell({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (!appearanceOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!appearancePanelRef.current?.contains(event.target as Node)
+        && !appearanceTriggerRef.current?.contains(event.target as Node)) setAppearanceOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setAppearanceOpen(false);
+      appearanceTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [appearanceOpen]);
 
   useEffect(() => {
     let active = true;
@@ -317,6 +367,7 @@ export function PortalShell({
           onFocusCapture={() => setCapsuleHidden(false)}
           ref={capsuleRef}
         >
+          <GlassSurface />
           <a aria-label={selectedPlugin.name} className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>
             <PluginBrandIcon pluginKey={selectedPlugin.pluginKey} />
             <span>{selectedPlugin.name}</span>
@@ -325,7 +376,16 @@ export function PortalShell({
             <CurrentPageIcon size={18} strokeWidth={1.7} />
             <span>{currentNavigation.label}</span>
           </div>
-          <nav aria-label="插件内容" data-expanded={mobileMenuOpen ? "true" : "false"} id="portal-capsule-navigation" onClick={() => setMobileMenuOpen(false)}>
+          <nav
+            aria-label="插件内容"
+            data-expanded={mobileMenuOpen ? "true" : "false"}
+            id="portal-capsule-navigation"
+            onClick={() => {
+              if (!mobileMenuOpen) return;
+              setMobileMenuOpen(false);
+              mobileMenuTriggerRef.current?.focus();
+            }}
+          >
             {NAVIGATION.map((item) => (
               <a aria-current={item.page === page ? "page" : undefined} href={portalHref(selectedPlugin.id, item.page)} key={item.page}>
                 <item.icon aria-hidden="true" size={18} strokeWidth={1.7} />
@@ -334,6 +394,7 @@ export function PortalShell({
             ))}
           </nav>
           <div className="portal-capsule-actions">
+            {compact && <ThemeToggle className="portal-theme-compact" />}
             <button
               aria-controls="portal-capsule-navigation"
               aria-expanded={mobileMenuOpen}
@@ -348,7 +409,20 @@ export function PortalShell({
             </button>
             <div className="portal-page-actions" ref={setPageActionTarget} />
             {loaded ? <DownloadAction info={loaded.download} /> : null}
+            {!compact && <button
+              aria-controls="portal-appearance-panel"
+              aria-expanded={appearanceOpen}
+              aria-label="外观设置"
+              className="portal-appearance-trigger"
+              onClick={() => { setCapsuleHidden(false); setAppearanceOpen((open) => !open); }}
+              ref={appearanceTriggerRef}
+              title="外观设置"
+              type="button"
+            ><Triangle aria-hidden="true" size={10} fill="currentColor" /></button>}
           </div>
+          {!compact && appearanceOpen && <div aria-label="主题设置" className="portal-appearance-panel" id="portal-appearance-panel" ref={appearancePanelRef} role="group">
+            <ThemeToggle />
+          </div>}
         </header>
         <main aria-label={PAGE_TITLES[page]} className="portal-main">
           <section className="portal-content" aria-busy={!loaded}>
@@ -419,24 +493,10 @@ function renderPage({
   }
 }
 
-function PluginBrandIcon({ pluginKey }: { pluginKey: string }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [pluginKey]);
-  if (failed) return <Package aria-hidden="true" className="portal-brand-fallback" size={22} />;
-  return (
-    <img
-      alt=""
-      className="portal-brand-image"
-      onError={() => setFailed(true)}
-      src={`/api/plugins/${encodeURIComponent(pluginKey)}/icon`}
-    />
-  );
-}
-
 function DownloadAction({ info }: { info: PluginDownloadInfo }) {
   const label = `下载最新版 v${info.version}`;
   if (info.available && info.href) {
-    return <a aria-label={label} className="portal-download-action" href={info.href} title={label}><Download aria-hidden="true" size={17} /><span className="portal-action-label">{label}</span></a>;
+    return <a aria-label={label} className="portal-download-action" href={info.href} title={label}><Download aria-hidden="true" size={17} /><span className="portal-action-label">v{info.version}</span></a>;
   }
-  return <button aria-label={label} className="portal-download-action" disabled title="该插件未提供可下载版本" type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">{label}</span></button>;
+  return <button aria-label={label} className="portal-download-action" disabled title="该插件未提供可下载版本" type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">v{info.version}</span></button>;
 }

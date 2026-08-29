@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import { PluginManager, type PluginManagementClient } from "../portal/PluginManager";
+import { PluginBrandIcon } from "../portal/PluginBrandIcon";
+import { ThemeToggle } from "../portal/PortalTheme";
 import { portalHref } from "../portal/routes";
 import type { PluginCatalog } from "../portal/types";
 import { CoverAccretionBackground } from "./CoverAccretionBackground";
@@ -56,9 +58,10 @@ function HubList({
   return <main className="company-dev-hub" data-company-dev-hub aria-hidden={!interactive || undefined}>
     <h1 className="sr-only">已纳入插件</h1>
     <div className="company-dev-hub-sections">
-      {!readOnly && <div className="company-dev-hub-toolbar">
-        <button ref={includeButtonRef} type="button" tabIndex={interactive ? 0 : -1} onClick={onInclude}>纳入插件</button>
-      </div>}
+      <div className="company-dev-hub-toolbar">
+        <ThemeToggle disabled={!interactive} />
+        {!readOnly && <button ref={includeButtonRef} type="button" tabIndex={interactive ? 0 : -1} onClick={onInclude}>纳入插件</button>}
+      </div>
       <section className="company-dev-hub-section" data-hub-section="plugins">
         <h2>插件</h2>
         <div className="company-dev-hub-entry-list">
@@ -73,7 +76,10 @@ function HubList({
                 tabIndex={interactive ? 0 : -1}
                 data-hub-entry={item.id}
               >
-                <span>{item.name}</span>
+                <span className="company-dev-hub-entry-identity">
+                  <PluginBrandIcon pluginKey={item.pluginKey} />
+                  <span>{item.name}</span>
+                </span>
                 <span className="company-dev-hub-entry-action">进入</span>
               </a>)}
         </div>

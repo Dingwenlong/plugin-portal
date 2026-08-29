@@ -327,7 +327,7 @@ test.describe.serial("Plugin Portal", () => {
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
       await expect(page.getByRole("link", { name: "研发助手插件" })).toHaveAttribute("href", "#/plugins/project-delivery-hub/overview");
       const moreButton = page.getByRole("button", { name: "打开导航菜单" });
-      if (width < 900) {
+      if (width < 1024) {
         await expect(moreButton).toBeVisible();
         await moreButton.click();
       } else {
@@ -336,7 +336,7 @@ test.describe.serial("Plugin Portal", () => {
       for (const name of ["Skills", "Prompts", "MCP", "扩展工具", "工程规范", "版本沿革"]) {
         await expect(page.getByRole("link", { name })).toBeVisible();
       }
-      if (width < 900) {
+      if (width < 1024) {
         await page.getByRole("link", { name: "Skills" }).click();
         await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
         await expect(page.getByRole("button", { name: "打开导航菜单" })).toBeVisible();
@@ -426,7 +426,7 @@ test.describe("Capsule refinements", () => {
       const capsule = page.getByRole("banner", { name: "插件导航" });
       const longPageBox = (await capsule.boundingBox())!;
 
-      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      if (width < 1024) await page.getByRole("button", { name: "打开导航菜单" }).click();
       await page.getByRole("link", { name: "Prompts", exact: true }).click();
       await expect(page.getByRole("main", { name: "Prompts", exact: true })).toBeVisible();
       await expect(page.getByText("尚未添加 Prompt", { exact: true })).toBeVisible();
@@ -447,7 +447,7 @@ test.describe("Capsule refinements", () => {
       await expect(dialog).toHaveCount(0);
       await expect(addPrompt).toBeFocused();
 
-      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      if (width < 1024) await page.getByRole("button", { name: "打开导航菜单" }).click();
       await page.getByRole("link", { name: "Skills", exact: true }).click();
       await expect(page.getByRole("row")).toHaveCount(37);
       const returnedBox = (await capsule.boundingBox())!;
@@ -464,13 +464,13 @@ test.describe("Capsule refinements", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
       await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeVisible();
-      if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+      if (width < 1024) await page.getByRole("button", { name: "打开导航菜单" }).click();
       const originalBoxes = await Promise.all(names.map((name) => page.getByRole("link", { name, exact: true }).boundingBox()));
       for (const selectedName of names) {
         const selectedMenu = page.getByRole("link", { name: selectedName, exact: true });
         await selectedMenu.click();
         await expect(page.getByRole("main", { name: selectedName, exact: true })).toBeVisible();
-        if (width < 900) await page.getByRole("button", { name: "打开导航菜单" }).click();
+        if (width < 1024) await page.getByRole("button", { name: "打开导航菜单" }).click();
         await expect(selectedMenu).toHaveAttribute("aria-current", "page");
         for (const [index, name] of names.entries()) {
           const menu = page.getByRole("link", { name, exact: true });
@@ -484,7 +484,7 @@ test.describe("Capsule refinements", () => {
   });
 
   test("keeps desktop navigation centered when page actions change", async ({ page }) => {
-    for (const width of [1920, 1600, 1120, 900]) {
+    for (const width of [1920, 1600, 1120, 1024]) {
       await page.setViewportSize({ width, height: 900 });
       let menuCenter: number | undefined;
       for (const route of ["skills", "prompts", "overview", "releases"]) {
@@ -508,7 +508,7 @@ test.describe("Capsule refinements", () => {
     }
   });
 
-  test("keeps download rightmost and shares its style with page actions", async ({ page }) => {
+  test("keeps download after page actions and before desktop appearance settings", async ({ page }) => {
     for (const width of [1600, 1120, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       for (const [route, label] of [["overview", "配置流程"], ["prompts", "新增 Prompt"]]) {
@@ -518,9 +518,13 @@ test.describe("Capsule refinements", () => {
         await expect(download).toBeVisible();
         await expect(action).toBeVisible();
         const downloadBox = (await download.boundingBox())!;
-        for (const control of await page.locator(".portal-capsule-actions button:visible, .portal-capsule-actions a:visible").all()) {
+        for (const control of await page.locator(".portal-capsule-actions button:visible:not(.portal-appearance-trigger), .portal-capsule-actions a:visible").all()) {
           const box = (await control.boundingBox())!;
           expect(box.x + box.width).toBeLessThanOrEqual(downloadBox.x + downloadBox.width + 1);
+        }
+        if (width >= 1024) {
+          const appearance = (await page.getByRole("button", { name: "外观设置" }).boundingBox())!;
+          expect(appearance.x).toBeGreaterThanOrEqual(downloadBox.x + downloadBox.width);
         }
         for (const property of ["font-size", "font-weight", "line-height", "padding-top", "padding-right", "border-radius", "border-top-color", "background-color"]) {
           const expected = await download.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);

@@ -1,6 +1,7 @@
 :root {
-  color: #f4f4f5;
-  background: #000;
+  color: var(--text);
+  background: var(--page);
+  color-scheme: dark;
   font-family:
     Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
@@ -14,6 +15,51 @@
   --accent: #9bbbd1;
   --accent-hover: #c4d9e7;
   --focus-ring: #c8ddeb;
+  --page: #000;
+  --divider: #29313b;
+  --control-border: #394450;
+  --control-hover: #66778a;
+  --selected: #303342;
+  --dialog: #0b0f15;
+  --popover: rgba(14, 19, 27, .97);
+  --icon: #9bbddf;
+  --scrim: rgba(0, 0, 0, .76);
+  --error: #ffb4ab;
+  --modal-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+  --glass-tint: rgba(12, 18, 28, .16);
+  --glass-border: rgba(204, 225, 245, .24);
+  --glass-highlight: rgba(255, 255, 255, .3);
+  --glass-shadow: 0 12px 36px rgba(0, 0, 0, .22);
+  --hub-glow: rgba(67, 55, 111, .18);
+}
+
+:root[data-portal-theme="light"] {
+  color-scheme: light;
+  --page: #fff;
+  --bg: #fff;
+  --surface: #f3f5f8;
+  --border: #d4dae2;
+  --text: #171c24;
+  --muted: #505c6c;
+  --faint: #616c7b;
+  --accent: #355f80;
+  --accent-hover: #153e60;
+  --focus-ring: #245f8b;
+  --divider: #dce1e7;
+  --control-border: #b8c2cf;
+  --control-hover: #697c92;
+  --selected: #e3e9f0;
+  --dialog: #fff;
+  --popover: rgba(255, 255, 255, .97);
+  --icon: #345f82;
+  --scrim: rgba(23, 32, 45, .3);
+  --error: #ab2828;
+  --modal-shadow: 0 24px 80px rgba(24, 41, 64, .16);
+  --glass-tint: rgba(255, 255, 255, .18);
+  --glass-border: rgba(113, 132, 153, .28);
+  --glass-highlight: rgba(255, 255, 255, .85);
+  --glass-shadow: 0 12px 36px rgba(45, 66, 89, .12);
+  --hub-glow: rgba(146, 161, 191, .06);
 }
 
 * {
@@ -24,7 +70,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #000;
+  background: var(--page);
 }
 
 button,
@@ -64,11 +110,10 @@ body:has(.portal-layout) {
   min-height: 64px;
   margin-inline: auto;
   padding: 9px 14px;
-  border: 1px solid rgba(130, 151, 174, .26);
+  border: 1px solid var(--glass-border);
   border-radius: 999px;
-  background: rgba(10, 14, 20, .78);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .38), inset 0 1px rgba(255, 255, 255, .035);
-  backdrop-filter: blur(18px) saturate(130%);
+  background: transparent;
+  box-shadow: var(--glass-shadow);
   transform: translateY(0);
   transition: transform 220ms ease;
 }
@@ -171,7 +216,7 @@ body:has(.portal-layout) {
   align-self: start;
   height: 100vh;
   padding: 24px 16px;
-  border-right: 1px solid #29313b;
+  border-right: 1px solid var(--divider);
 }
 
 .portal-brand {
@@ -199,13 +244,13 @@ body:has(.portal-layout) {
   width: 34px;
   height: 34px;
   padding: 7px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
 }
 
 button:focus-visible,
 select:focus-visible {
-  outline: 2px solid #c4d5e7;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -217,7 +262,7 @@ select:focus-visible {
 
 .portal-brand:focus-visible .portal-brand-image,
 .portal-brand:focus-visible .portal-brand-fallback {
-  outline: 2px solid #c4d5e7;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -227,23 +272,23 @@ select:focus-visible {
 }
 
 .portal-download-action:focus-visible {
-  outline: 2px solid #c4d5e7;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
 .plugin-selector {
   display: grid;
   gap: 8px;
-  color: #a8b0bb;
+  color: var(--muted);
   font-size: 13px;
 }
 
 .plugin-selector select,
 button {
   padding: 9px 11px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
-  color: #f4f4f5;
+  color: var(--text);
   background: transparent;
 }
 
@@ -258,13 +303,13 @@ button {
   gap: 10px;
   padding: 10px 12px;
   border: 0;
-  color: #a8b0bb;
+  color: var(--muted);
   background: transparent;
   text-decoration: none;
 }
 
 .portal-sidebar nav a[aria-current="page"] {
-  color: #fff;
+  color: var(--text);
   background: transparent;
   font-weight: 700;
 }
@@ -290,7 +335,7 @@ button {
   justify-content: space-between;
   min-height: 72px;
   padding: 0 32px;
-  border-bottom: 1px solid #29313b;
+  border-bottom: 1px solid var(--divider);
 }
 
 .portal-header h1 {
@@ -311,9 +356,9 @@ button {
   gap: 7px;
   min-height: 40px;
   padding: 9px 11px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
-  color: #f4f4f5;
+  color: var(--text);
   background: transparent;
   font-size: 14px;
   font-weight: 400;
@@ -330,13 +375,13 @@ button {
 .portal-download-action:hover,
 .portal-page-action:hover,
 .portal-capsule-more:hover {
-  border-color: #566576;
+  border-color: var(--control-hover);
 }
 
 .portal-download-action:disabled,
 .portal-page-action:disabled,
 .portal-capsule-more:disabled {
-  color: #7f8995;
+  color: var(--faint);
   cursor: not-allowed;
 }
 
@@ -347,7 +392,7 @@ button {
 }
 
 .plugin-identity {
-  color: #7f8995;
+  color: var(--faint);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
 }
@@ -379,13 +424,13 @@ table {
 th,
 td {
   padding: 14px 16px;
-  border-bottom: 1px solid #29313b;
+  border-bottom: 1px solid var(--divider);
   text-align: left;
   vertical-align: top;
 }
 
 th {
-  color: #9ca5b0;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -411,16 +456,16 @@ td small,
 .release-view small {
   display: block;
   margin-top: 6px;
-  color: #7f8995;
+  color: var(--faint);
 }
 
 .empty-copy {
-  color: #9ca5b0;
+  color: var(--muted);
 }
 
 .content-list article {
   padding: 16px 0;
-  border-bottom: 1px solid #29313b;
+  border-bottom: 1px solid var(--divider);
 }
 
 .mcp-service-heading {
@@ -438,7 +483,7 @@ td small,
 .mcp-service small {
   display: block;
   margin-top: 4px;
-  color: #7f8995;
+  color: var(--faint);
 }
 
 .skill-name-content {
@@ -458,7 +503,7 @@ td small,
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: #8fbce9;
+  color: var(--icon);
 }
 
 .skill-name-copy {
@@ -466,7 +511,7 @@ td small,
 }
 
 .mcp-service-heading > span {
-  color: #9ca5b0;
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -480,7 +525,7 @@ td small,
   gap: 8px 18px;
   margin: 12px 0 0;
   padding: 0;
-  color: #9ca5b0;
+  color: var(--muted);
   list-style: none;
 }
 
@@ -561,7 +606,7 @@ td small,
 
 .advanced-import-options summary {
   cursor: pointer;
-  color: #a8b0bb;
+  color: var(--muted);
 }
 
 .advanced-import-options label,
@@ -573,16 +618,16 @@ td small,
 .workflow-editor label {
   display: grid;
   gap: 6px;
-  color: #a8b0bb;
+  color: var(--muted);
 }
 
 input,
 textarea {
   width: 100%;
   padding: 9px 11px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
-  color: #f4f4f5;
+  color: var(--text);
   background: transparent;
 }
 
@@ -596,7 +641,7 @@ textarea {
   flex-wrap: wrap;
   gap: 0;
   padding: 4px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 12px;
   margin-bottom: 28px;
 }
@@ -604,13 +649,13 @@ textarea {
 .workflow-tabs button {
   border: 0;
   border-radius: 8px;
-  color: #a8b0bb;
+  color: var(--muted);
   background: transparent;
 }
 
 .workflow-tabs button[aria-selected="true"] {
-  color: #fff;
-  background: #303342;
+  color: var(--text);
+  background: var(--selected);
 }
 
 .workflow-section + .workflow-section {
@@ -625,12 +670,12 @@ textarea {
 
 .workflow-step {
   padding: 18px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 10px;
 }
 
 .workflow-step > span {
-  color: #9fb8d0;
+  color: var(--accent);
   font-size: 12px;
 }
 
@@ -639,7 +684,7 @@ textarea {
 }
 
 .workflow-step p {
-  color: #9ca5b0;
+  color: var(--muted);
 }
 
 .portal-modal-backdrop {
@@ -649,7 +694,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, .76);
+  background: var(--scrim);
 }
 
 .portal-modal {
@@ -657,10 +702,10 @@ textarea {
   max-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 24px;
-  border: 1px solid #394450;
+  border: 1px solid var(--control-border);
   border-radius: 14px;
-  background: #0b0f15;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, .52);
+  background: var(--dialog);
+  box-shadow: var(--modal-shadow);
 }
 
 .portal-modal-wide {
@@ -689,7 +734,7 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   min-height: 560px;
-  border: 1px solid #29313b;
+  border: 1px solid var(--divider);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -704,8 +749,8 @@ textarea {
   display: grid;
   align-content: start;
   gap: 14px;
-  border-left: 1px solid #29313b;
-  background: #0b0f15;
+  border-left: 1px solid var(--divider);
+  background: var(--dialog);
 }
 
 .workflow-inspector h3 {
@@ -742,7 +787,7 @@ textarea {
   padding: 4px 0;
   border: 0;
   border-radius: 4px;
-  color: #f4f4f5;
+  color: var(--text);
   background: transparent;
   font-size: 20px;
   font-weight: 700;
@@ -751,14 +796,14 @@ textarea {
 
 .workflow-editor-section-title[aria-current="true"],
 .workflow-editor-step[aria-current="true"] {
-  outline: 2px solid #9fb8d0;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
 .workflow-editor-step {
   width: 100%;
   min-width: 0;
-  color: #f4f4f5;
+  color: var(--text);
   background: transparent;
   text-align: left;
 }
@@ -776,7 +821,7 @@ textarea {
 .workflow-editor-add {
   min-height: 52px;
   border-style: dashed;
-  color: #a8b0bb;
+  color: var(--muted);
   background: transparent;
 }
 
@@ -789,7 +834,7 @@ textarea {
 }
 
 .workflow-editor-empty {
-  color: #9ca5b0;
+  color: var(--muted);
 }
 
 @media (min-width: 901px) {
@@ -821,7 +866,7 @@ textarea {
   gap: 8px;
   margin: 0;
   padding: 12px;
-  border: 1px solid #29313b;
+  border: 1px solid var(--divider);
   border-radius: 8px;
 }
 
@@ -840,13 +885,13 @@ textarea {
 
 .plugin-manager > p,
 .plugin-preview > p {
-  color: #9ca5b0;
+  color: var(--muted);
 }
 
 .plugin-preview {
   margin-top: 28px;
   padding-top: 20px;
-  border-top: 1px solid #29313b;
+  border-top: 1px solid var(--divider);
 }
 
 .empty-state h2 {
@@ -854,7 +899,7 @@ textarea {
 }
 
 .empty-state p {
-  color: #9ca5b0;
+  color: var(--muted);
 }
 
 .empty-state button {
@@ -882,6 +927,11 @@ textarea {
 }
 
 .hub-cover {
+  --bg: #080b10;
+  --text: #f3f4f7;
+  --focus-ring: #c8ddeb;
+  color-scheme: dark;
+  color: var(--text);
   position: relative;
   isolation: isolate;
   height: 100dvh;
@@ -904,6 +954,76 @@ textarea {
   pointer-events: none;
   background: #000;
 }
+
+.portal-capsule-glass {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-tint);
+  box-shadow: inset 0 1px 1px var(--glass-highlight), inset 0 -1px 1px var(--glass-border);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+
+.portal-capsule-glass::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(175deg, var(--glass-highlight), transparent 16%, transparent 84%, var(--glass-border));
+  content: "";
+  pointer-events: none;
+}
+
+.portal-glass-definitions { position: absolute; pointer-events: none; }
+
+.portal-capsule > .portal-brand,
+.portal-capsule-current,
+.portal-capsule nav,
+.portal-capsule-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.portal-appearance-panel {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 10px);
+  right: 0;
+  padding: 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--popover);
+  box-shadow: var(--modal-shadow);
+}
+
+.portal-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.portal-appearance-trigger {
+  display: inline-grid;
+  width: 28px;
+  min-height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  color: var(--muted);
+}
+
+.portal-appearance-trigger svg { transform: rotate(180deg); }
+.portal-appearance-trigger[aria-expanded="true"] svg { transform: none; }
+.portal-appearance-trigger:hover { color: var(--text); }
+.portal-appearance-panel .portal-theme-toggle { border: 0; }
 
 .portal-cover-accretion-host {
   position: absolute;
@@ -1032,7 +1152,7 @@ textarea {
   min-height: 100vh;
   overflow-y: auto;
   padding: clamp(48px, 10vh, 96px) 32px 64px;
-  background: radial-gradient(circle at 82% 0%, rgba(67, 55, 111, .18), transparent 34rem), var(--bg);
+  background: radial-gradient(circle at 82% 0%, var(--hub-glow), transparent 34rem), var(--bg);
   color: var(--text);
 }
 
@@ -1045,6 +1165,7 @@ textarea {
 
 .company-dev-hub-toolbar {
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
 }
 
@@ -1065,6 +1186,11 @@ textarea {
 .company-dev-hub-entry-list { min-width: 0; display: grid; }
 .company-dev-hub-entry { width: 100%; min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); color: var(--text); font-size: 14px; font-weight: 680; text-decoration: none; }
 .company-dev-hub-entry:hover { color: var(--accent-hover); }
+.company-dev-hub-entry-identity { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.company-dev-hub-entry-identity > span { min-width: 0; overflow-wrap: anywhere; }
+.company-dev-hub-entry-identity .portal-brand-image,
+.company-dev-hub-entry-identity .portal-brand-fallback { width: 30px; height: 30px; }
+.company-dev-hub-entry-identity .portal-brand-fallback { padding: 3px; border: 0; }
 .company-dev-hub-entry-action { flex: 0 0 auto; color: var(--accent); font-size: 12px; font-weight: 700; }
 .company-dev-hub-empty { margin: 12px 0; color: var(--muted); }
 
@@ -1075,7 +1201,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, .76);
+  background: var(--scrim);
 }
 
 .hub-plugin-dialog {
@@ -1085,7 +1211,7 @@ textarea {
   padding: 24px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: #080b10;
+  background: var(--dialog);
   color: var(--text);
 }
 
@@ -1095,7 +1221,7 @@ textarea {
 }
 
 .hub-plugin-dialog .plugin-manager { max-width: none; }
-.hub-management-error { position: fixed; z-index: 65; right: 24px; bottom: 24px; color: #ffb4ab; }
+.hub-management-error { position: fixed; z-index: 65; right: 24px; bottom: 24px; color: var(--error); }
 
 @media (max-width: 720px) {
   .portal-layout {
@@ -1106,7 +1232,7 @@ textarea {
     position: static;
     height: auto;
     border-right: 0;
-    border-bottom: 1px solid #29313b;
+    border-bottom: 1px solid var(--divider);
   }
 
   .portal-sidebar-download {
@@ -1160,9 +1286,9 @@ textarea {
   }
 }
 
-@media (max-width: 899px) {
+@media (max-width: 1023px) {
   .portal-capsule {
-    grid-template-columns: 36px minmax(0, 1fr) 130px;
+    grid-template-columns: 36px minmax(0, 1fr) 176px;
     gap: 8px;
     min-height: 58px;
     padding: 8px 10px;
@@ -1204,10 +1330,10 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     padding: 10px;
-    border: 1px solid rgba(130, 151, 174, .28);
+    border: 1px solid var(--glass-border);
     border-radius: 18px;
-    background: rgba(10, 14, 20, .96);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
+    background: var(--popover);
+    box-shadow: var(--modal-shadow);
     backdrop-filter: blur(18px) saturate(130%);
   }
 
@@ -1229,6 +1355,17 @@ textarea {
     padding-top: 102px;
   }
 
+  .portal-theme-compact {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+  }
+
+  .portal-theme-compact .portal-theme-label { display: none; }
+}
+
+@media (max-width: 899px) {
   .portal-modal-wide {
     width: min(100%, calc(100vw - 24px));
   }
@@ -1238,7 +1375,7 @@ textarea {
   }
 
   .workflow-inspector {
-    border-top: 1px solid #29313b;
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 }
@@ -1248,7 +1385,7 @@ textarea {
     top: 10px;
     right: 10px;
     left: 10px;
-    grid-template-columns: 36px minmax(0, 1fr) 124px;
+    grid-template-columns: 36px minmax(0, 1fr) 167px;
   }
 
   .portal-capsule-actions {
@@ -1259,6 +1396,11 @@ textarea {
     padding-right: 16px;
     padding-left: 16px;
   }
+}
+
+@media (max-width: 420px) {
+  .portal-capsule-current span { display: none; }
+  .portal-capsule-current { min-width: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

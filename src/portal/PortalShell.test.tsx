@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PortalShell, type PortalDataClient } from "./PortalShell";
 
@@ -72,6 +72,93 @@ function createClient(): PortalDataClient {
 }
 
 describe("PortalShell", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => {
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-portal-theme");
+  });
+
+  it("keeps a separate glass layer underneath the interactive capsule", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/skills" />);
+    const capsule = await screen.findByRole("banner", { name: "插件导航" });
+    const glass = capsule.querySelector(".portal-capsule-glass");
+    expect(glass).toHaveAttribute("aria-hidden", "true");
+    expect(glass?.querySelector("a, button, nav")).toBeNull();
+    expect(within(capsule).getByRole("navigation", { name: "插件内容" }).parentElement).toBe(capsule);
+  });
+
+  it("shows only the download version and opens theme settings from the trailing triangle", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/prompts" />);
+    const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
+    expect(download).toHaveTextContent(/^v3\.7\.17$/);
+    const settings = screen.getByRole("button", { name: "外观设置" });
+    expect(settings).toHaveAttribute("aria-expanded", "false");
+    expect(download.nextElementSibling).toBe(settings);
+    expect(screen.queryByRole("group", { name: "主题设置" })).not.toBeInTheDocument();
+    fireEvent.click(settings);
+    const panel = screen.getByRole("group", { name: "主题设置" });
+    fireEvent.click(within(panel).getByRole("button", { name: "切换为白底黑字" }));
+    expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
+    expect(window.localStorage.getItem("plugin-portal.theme")).toBe("light");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(settings).toHaveFocus();
+    expect(settings).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(settings);
+    fireEvent.pointerDown(document.body);
+    expect(settings).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("restores the shared theme on Hub and keeps it available in read-only mode", async () => {
+    window.localStorage.setItem("plugin-portal.theme", "light");
+    const client = createClient();
+    client.getAccessMode = async () => ({ readOnly: true });
+    const { rerender } = render(<PortalShell client={client} initialHash="#/hub" />);
+    const toggle = await screen.findByRole("button", { name: "切换为深色" });
+    expect(screen.queryByRole("button", { name: "纳入插件" })).not.toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
+    fireEvent.click(toggle);
+    expect(document.documentElement).toHaveAttribute("data-portal-theme", "dark");
+    rerender(<PortalShell client={client} initialHash="#/plugins/yusheng-inc/mcp" />);
+    const settings = await screen.findByRole("button", { name: "外观设置" });
+    fireEvent.click(settings);
+    fireEvent.click(within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为白底黑字" }));
+    expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
+    expect(screen.queryByRole("button", { name: /配置流程|新增 Prompt/ })).not.toBeInTheDocument();
+  });
+
+  it("changes theme without replacing the page, an open Prompt draft, scroll position or focus", async () => {
+    render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/prompts" />);
+    const trigger = await screen.findByRole("button", { name: "新增 Prompt" });
+    const main = screen.getByRole("main", { name: "Prompts" });
+    fireEvent.click(trigger);
+    const draft = screen.getByLabelText("常用场景");
+    fireEvent.change(draft, { target: { value: "尚未保存的草稿" } });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 160 });
+    fireEvent.click(screen.getByRole("button", { name: "外观设置" }));
+    const toggle = within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为白底黑字" });
+    act(() => toggle.focus());
+    fireEvent.click(toggle);
+    expect(toggle).toHaveFocus();
+    expect(window.scrollY).toBe(160);
+    expect(screen.getByRole("main", { name: "Prompts" })).toBe(main);
+    expect(screen.getByLabelText("常用场景")).toBe(draft);
+    expect(draft).toHaveValue("尚未保存的草稿");
+  });
+
+  it("falls back to dark for invalid preferences and still toggles when storage is blocked", async () => {
+    window.localStorage.setItem("plugin-portal.theme", "invalid");
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    try {
+      render(<PortalShell client={createClient()} initialHash="#/hub" />);
+      const toggle = await screen.findByRole("button", { name: "切换为白底黑字" });
+      expect(document.documentElement).toHaveAttribute("data-portal-theme", "dark");
+      fireEvent.click(toggle);
+      expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it.each(["#/hub", "#/plugins/project-delivery-hub/overview", "#/plugins/project-delivery-hub/prompts"])(
     "keeps LAN content readable without management controls at %s", async (initialHash) => {
       const client = createClient();
@@ -201,13 +288,13 @@ describe("PortalShell", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it.each(["overview", "prompts", "skills"])("keeps download last in the %s capsule action order", async (page) => {
+  it.each(["overview", "prompts", "skills"])("keeps download after page actions and before appearance settings on %s", async (page) => {
     render(<PortalShell client={createClient()} initialHash={`#/plugins/project-delivery-hub/${page}`} />);
 
     const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
     const actions = download.closest(".portal-capsule-actions")!;
-    expect(actions.lastElementChild).toBe(download);
-    expect(actions.firstElementChild).toBe(screen.getByRole("button", { name: "打开导航菜单" }));
+    expect(actions.lastElementChild).toBe(screen.getByRole("button", { name: "外观设置" }));
+    expect(download.previousElementSibling).toHaveClass("portal-page-actions");
   });
 
   it("hides after sustained downward scrolling and restores on upward scrolling, focus and route changes", async () => {
@@ -333,8 +420,11 @@ describe("PortalShell", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(more);
-    fireEvent.click(within(navigation).getByRole("link", { name: "Skills" }));
+    const skills = within(navigation).getByRole("link", { name: "Skills" });
+    skills.focus();
+    fireEvent.click(skills);
     expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(more).toHaveFocus();
   });
 
   it("forces a hidden capsule back into view while a modal is open", async () => {

@@ -61,3 +61,51 @@ describe("HubEntry cover loading", () => {
     expect(screen.getByRole("button", { name: "纳入插件" })).toBeVisible();
   });
 });
+
+describe("HubEntry plugin icons", () => {
+  const catalog = {
+    revision: 2,
+    items: [
+      { pluginKey: "company-dev/project-delivery-hub", id: "project-delivery-hub", name: "研发助手插件", version: "1.0.0", summary: "" },
+      { pluginKey: "company-dev/yusheng-inc", id: "yusheng-inc", name: "昱胜 Inc", version: "1.0.0", summary: "" },
+    ],
+  };
+
+  function renderHub() {
+    return render(<HubEntry
+      catalog={catalog}
+      client={{ selectPluginDirectory: vi.fn(), previewImport: vi.fn(), promote: vi.fn(), rollback: vi.fn() }}
+      route="hub"
+      onNavigate={vi.fn()}
+      onCatalogChanged={vi.fn()}
+    />);
+  }
+
+  it("shows each plugin's local icon before its name without changing the entry link", () => {
+    renderHub();
+    for (const item of catalog.items) {
+      const entry = screen.getByRole("link", { name: item.name });
+      const identity = entry.querySelector(".company-dev-hub-entry-identity");
+      const icon = identity?.querySelector("img");
+      expect(icon).toHaveAttribute("src", `/api/plugins/${encodeURIComponent(item.pluginKey)}/icon`);
+      expect(icon).toHaveAttribute("alt", "");
+      expect(identity?.firstElementChild).toBe(icon);
+      expect(identity?.lastElementChild).toHaveTextContent(item.name);
+      expect(entry).toHaveAttribute("href", `#/plugins/${item.id}/overview`);
+      expect(entry).toHaveTextContent("进入");
+    }
+  });
+
+  it("uses a decorative fallback for a missing icon without affecting other entries", () => {
+    renderHub();
+    const entry = screen.getByRole("link", { name: "昱胜 Inc" });
+    const icon = entry.querySelector("img");
+    expect(icon).not.toBeNull();
+    fireEvent.error(icon!);
+    expect(entry.querySelector("img")).toBeNull();
+    expect(entry.querySelector(".portal-brand-fallback")).toHaveAttribute("aria-hidden", "true");
+    expect(entry).toHaveAttribute("href", "#/plugins/yusheng-inc/overview");
+    expect(screen.getByRole("link", { name: "研发助手插件" }).querySelector("img"))
+      .toHaveAttribute("src", "/api/plugins/company-dev%2Fproject-delivery-hub/icon");
+  });
+});
