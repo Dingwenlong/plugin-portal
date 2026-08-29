@@ -26,10 +26,12 @@ class ServerConfigurationError(ValueError):
 class PortalHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], api: PortalApi, web_root: Path, *, read_only: bool = False):
+    def __init__(self, address: tuple[str, int], api: PortalApi, web_root: Path, *,
+                 read_only: bool = False, https_origin: str | None = None):
         self.api = api
         self.web_root = web_root
         self.read_only = read_only
+        self.https_origin = https_origin
         self.public_files = _public_static_files(web_root) if read_only else {}
         super().__init__(address, PortalRequestHandler)
 
@@ -42,9 +44,14 @@ def create_server(
     web_root: Path | str,
     test_only: bool = False,
     read_only: bool = False,
+    https_origin: str | None = None,
     directory_picker=choose_plugin_directory,
 ) -> PortalHTTPServer:
-    if read_only and not test_only:
+    if https_origin is not None:
+        _validate_https_origin(https_origin)
+        if not read_only or host != "127.0.0.1" or (not test_only and port != 9135):
+            raise ServerConfigurationError("HTTPS 代理后台只能以只读模式绑定 127.0.0.1:9135")
+    elif read_only and not test_only:
         try:
             address = ipaddress.IPv4Address(host)
         except ipaddress.AddressValueError:
@@ -74,7 +81,22 @@ def create_server(
         PortalApi(PortalStore(data_root), directory_picker=directory_picker),
         root,
         read_only=read_only,
+        https_origin=https_origin,
     )
+
+
+def _validate_https_origin(origin: str) -> None:
+    try:
+        parsed = urlsplit(origin)
+        address = ipaddress.IPv4Address(parsed.hostname)
+        valid = (parsed.scheme == "https" and parsed.port == 9135
+                 and origin == f"https://{address}:9135"
+                 and any(address in ipaddress.IPv4Network(network)
+                         for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")))
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        raise ServerConfigurationError("HTTPS 来源必须是明确的局域网 IPv4 地址及 9135 端口")
 
 
 def _public_static_files(root: Path) -> dict[str, tuple[str, bytes]]:
@@ -210,13 +232,15 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
 
     def _same_origin(self) -> bool:
         if self.server.read_only:
-            expected_host = f"{self.server.server_address[0]}:{self.server.server_address[1]}"
+            expected_host = (urlsplit(self.server.https_origin).netloc if self.server.https_origin else
+                             f"{self.server.server_address[0]}:{self.server.server_address[1]}")
             if self.headers.get_all("Host") != [expected_host]:
                 return False
-        origin = self.headers.get("Origin")
-        if origin is None:
+        origins = self.headers.get_all("Origin")
+        if origins is None:
             return True
-        return origin == f"http://{self.headers.get('Host', '')}"
+        expected_origin = self.server.https_origin or f"http://{self.headers.get('Host', '')}"
+        return origins == [expected_origin]
 
     def _deny_write(self) -> None:
         self.close_connection = True

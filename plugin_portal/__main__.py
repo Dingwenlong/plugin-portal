@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=9137)
     serve.add_argument("--read-only", action="store_true", help="局域网只读模式，禁止管理和编辑")
+    serve.add_argument("--https-origin", help="HTTPS 代理的明确公开来源；只读后台必须绑定本机 9135")
     serve.add_argument("--data-root", type=Path, required=True)
     serve.add_argument("--web-root", type=Path, required=True)
     migrate = subparsers.add_parser("migrate-legacy", help="从旧版本机 Portal 一次性迁移资料")
@@ -50,6 +51,7 @@ def main() -> int:
             data_root=arguments.data_root,
             web_root=arguments.web_root,
             read_only=arguments.read_only,
+            https_origin=arguments.https_origin,
         )
     except (OSError, ServerConfigurationError) as error:
         print(f"Plugin Portal 启动失败：{error}")
