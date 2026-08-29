@@ -165,19 +165,15 @@ function HubCover({
         frozen={effectivePhase !== "idle"}
         onReady={() => setCoverReady(true)}
       />
-      <div
-        aria-hidden={coverReady}
-        aria-label="正在加载封面"
+      {!coverReady && <p
         aria-live="polite"
-        className="hub-cover-loading"
-        data-cover-loading-overlay
-        data-ready={coverReady}
+        className="sr-only"
+        data-cover-loading-status
         role="status"
       >
-        <span aria-hidden="true" className="hub-cover-loading-spinner" />
-        <span>加载中</span>
-      </div>
-      {coverReady ? <CoverLiquidGlassButton
+        正在加载封面
+      </p>}
+      <CoverLiquidGlassButton
         className={`hub-entry-button is-${effectivePhase}`}
         disabled={effectivePhase !== "idle"}
         style={entryStyle}
@@ -185,12 +181,8 @@ function HubCover({
         onAnimationEnd={onButtonAnimationEnd}
       >
         <span data-hub-start-size={START_DIAMETER}>Start</span>
-      </CoverLiquidGlassButton> : <button
-        className="portal-cover-enter"
-        type="button"
-        disabled
-      >Start</button>}
-      <footer className="hub-cover-attribution">
+      </CoverLiquidGlassButton>
+      <footer className="hub-cover-attribution sr-only">
         <a href="https://openprocessing.org/@jcponcemath/2696126" target="_blank" rel="noreferrer">Accretion by Xor — jcponcemath</a>
         <span aria-hidden="true"> · </span>
         <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 3.0</a>

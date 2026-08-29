@@ -330,7 +330,8 @@ test("keeps the original cover dark under a saved light theme", async ({ page })
   await page.goto(`${portal.baseUrl}/#/`);
   await expect(page.locator(".hub-cover")).toHaveCSS("color-scheme", "dark");
   await expect(page.locator(".portal-cover-accretion")).toHaveCSS("background-color", "rgb(0, 0, 0)");
-  await expect(page.locator("[data-cover-loading-overlay]")).toHaveAttribute("data-ready", "true", { timeout: 12_000 });
+  await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "ready", { timeout: 12_000 });
+  await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start" })).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".portal-theme-toggle")).toBeHidden();
   await page.getByRole("button", { name: "Start" }).click();

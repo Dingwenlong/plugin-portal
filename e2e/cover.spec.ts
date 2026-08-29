@@ -25,6 +25,7 @@ test.describe("original cover", () => {
     page.on("request", (request) => { if (!request.url().startsWith(portal.baseUrl)) remote.push(request.url()); });
     await page.goto(`${portal.baseUrl}/#/`);
     const start = page.getByRole("button", { name: "Start" });
+    await expect(page.locator(".hub-cover-attribution")).toHaveCSS("clip-path", "inset(50%)");
     await expect(start).toBeEnabled({ timeout: 12_000 });
     await expect.soft(start).toHaveCSS("border-top-width", "0px");
     await expect.soft(start).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -48,10 +49,27 @@ test.describe("original cover", () => {
     await start.focus();
     await expect(start).toHaveCSS("outline-width", "2px");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    const started = Date.now();
+    await page.evaluate(() => {
+      const root = document.querySelector("[data-hub-entry-phase]")!;
+      const measurement = { clickedAt: 0, completedAt: 0 };
+      Object.assign(window, { coverKeyboardMeasurement: measurement });
+      document.querySelector("[data-cover-liquid-glass-button]")!.addEventListener("click", () => {
+        measurement.clickedAt = performance.now();
+      }, { once: true });
+      new MutationObserver(() => {
+        if (root.getAttribute("data-hub-entry-phase") === "hub") {
+          measurement.completedAt = performance.now();
+        }
+      }).observe(root, { attributes: true, attributeFilter: ["data-hub-entry-phase"] });
+    });
     await start.press("Enter");
     await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "hub", { timeout: 3_000 });
-    expect(Date.now() - started).toBeLessThan(3_000);
+    const measurement = await page.evaluate(() => (window as unknown as {
+      coverKeyboardMeasurement: { clickedAt: number; completedAt: number };
+    }).coverKeyboardMeasurement);
+    expect(measurement.clickedAt).toBeGreaterThan(0);
+    expect(measurement.completedAt - measurement.clickedAt).toBeGreaterThan(0);
+    expect(measurement.completedAt - measurement.clickedAt).toBeLessThan(3_000);
     await expect(background).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(remote).toEqual([]);
@@ -141,7 +159,18 @@ test.describe("original cover", () => {
     });
     await page.goto(`${portal.baseUrl}/#/`, { waitUntil: "domcontentloaded" });
     const start = page.getByRole("button", { name: "Start" });
-    await expect(start).toBeDisabled();
+    await expect(start).toBeVisible();
+    await expect(start).toBeEnabled();
+    await expect(page.locator("[data-cover-liquid-glass-canvas]")).toBeAttached();
+    await expect(page.locator("[data-cover-loading-status]")).toHaveCSS("clip-path", "inset(50%)");
+    const startBounds = await start.boundingBox();
+    expect(startBounds).not.toBeNull();
+    expect(await page.evaluate(({ x, y }) => Boolean(
+      document.elementFromPoint(x, y)?.closest("[data-cover-liquid-glass-button]"),
+    ), {
+      x: startBounds!.x + startBounds!.width / 2,
+      y: startBounds!.y + startBounds!.height / 2,
+    })).toBe(true);
     await expect(page.locator("[data-cover-accretion-background]")).toHaveAttribute("data-render-state", "fallback", { timeout: 12_000 });
     release();
     await page.waitForLoadState("networkidle");
@@ -151,26 +180,19 @@ test.describe("original cover", () => {
     await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "hub", { timeout: 3_000 });
   });
 
-  test("keeps the real Canvas fallback usable after a late button pipeline", async ({ page }) => {
+  test("keeps the real Canvas fallback usable when WebGPU is unavailable", async ({ page }) => {
     await page.addInitScript(() => {
-      const runtime = globalThis as unknown as {
-        GPUDevice: { prototype: { createRenderPipelineAsync: () => Promise<unknown> } };
-        releaseButtonPipeline?: () => void;
-      };
-      runtime.GPUDevice.prototype.createRenderPipelineAsync = () => new Promise((resolve) => {
-        runtime.releaseButtonPipeline = () => resolve({});
-      });
+      Object.defineProperty(navigator, "gpu", { configurable: true, value: undefined });
     });
     await page.setViewportSize({ width: 768, height: 540 });
     await page.goto(`${portal.baseUrl}/#/`);
     const start = page.getByRole("button", { name: "Start" });
     await expect(start).toBeEnabled({ timeout: 12_000 });
-    await expect(start).toHaveAttribute("data-render-state", "fallback", { timeout: 12_000 });
+    await expect(start).toHaveAttribute("data-render-state", "fallback");
     const canvas = page.locator("[data-cover-liquid-glass-canvas]");
     await expect(canvas).toHaveAttribute("data-fallback-renderer", "canvas-2d");
     const frame = Number(await canvas.getAttribute("data-rendered-frame"));
     expect(frame).toBeGreaterThan(0);
-    await page.evaluate(() => (globalThis as unknown as { releaseButtonPipeline: () => void }).releaseButtonPipeline());
     await expect.poll(async () => Number(await canvas.getAttribute("data-rendered-frame"))).toBeGreaterThan(frame);
     await expect(start).toHaveAttribute("data-render-state", "fallback");
     const started = Date.now();

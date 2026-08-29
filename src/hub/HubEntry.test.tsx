@@ -10,7 +10,7 @@ vi.mock("./CoverAccretionBackground", () => ({
 }));
 
 describe("HubEntry cover loading", () => {
-  it("blocks Start behind a loading mask until the cover background is ready", () => {
+  it("shows and activates Start immediately without a visual loading mask", () => {
     const { container } = render(
       <HubEntry
         catalog={{ revision: 0, items: [] }}
@@ -26,26 +26,30 @@ describe("HubEntry cover loading", () => {
       />,
     );
 
-    const overlay = container.querySelector("[data-cover-loading-overlay]");
-    expect(overlay).not.toBeNull();
+    const status = container.querySelector("[data-cover-loading-status]");
+    expect(status).not.toBeNull();
     const start = screen.getByRole("button", { name: "Start" });
-    expect(overlay).toHaveAttribute("data-ready", "false");
-    expect(overlay).toHaveAttribute("aria-hidden", "false");
-    expect(start).toBeDisabled();
-    expect(container.querySelector("[data-cover-liquid-glass-canvas]")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("finish-cover-render"));
-
-    expect(overlay).toHaveAttribute("data-ready", "true");
-    expect(overlay).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByRole("button", { name: "Start" })).toBeEnabled();
+    expect(status).toHaveClass("sr-only");
+    expect(status).toHaveTextContent("正在加载封面");
+    expect(start).toBeVisible();
+    expect(start).toBeEnabled();
     expect(container.querySelector("[data-cover-liquid-glass-canvas]")).not.toBeNull();
+
+    const attribution = container.querySelector(".hub-cover-attribution");
+    expect(attribution).not.toBeNull();
+    expect(attribution).toHaveClass("sr-only");
     expect(screen.getByRole("link", { name: "Accretion by Xor — jcponcemath" })).toHaveAttribute(
       "href", "https://openprocessing.org/@jcponcemath/2696126",
     );
     expect(screen.getByRole("link", { name: "CC BY-NC-SA 3.0" })).toHaveAttribute(
       "href", "https://creativecommons.org/licenses/by-nc-sa/3.0/",
     );
+
+    fireEvent.click(screen.getByTestId("finish-cover-render"));
+
+    expect(container.querySelector("[data-cover-loading-status]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Start" })).toBe(start);
+    expect(container.querySelector("[data-cover-liquid-glass-canvas]")).not.toBeNull();
   });
 
   it("does not mount cover resources on a direct Hub visit", () => {

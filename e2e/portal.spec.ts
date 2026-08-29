@@ -26,13 +26,12 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.locator(".hub-cover")).toBeVisible();
     await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
     const startButton = page.getByRole("button", { name: "Start" });
-    const loadingOverlay = page.locator("[data-cover-loading-overlay]");
     await expect(startButton).toBeVisible();
+    await expect(startButton).toBeEnabled();
+    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCount(0);
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "ready");
     await expect.poll(async () => page.locator("[data-cover-accretion-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
-    await expect(loadingOverlay).toHaveAttribute("data-ready", "true");
-    await expect(loadingOverlay).toHaveCSS("visibility", "hidden");
-    await expect(startButton).toBeEnabled();
+    await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
     // Bound original async shader compilation separately from the unchanged click-to-Hub gate.
     await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"), { timeout: 12_000 }).not.toBe("0");
     const buttonFrameBefore = Number(await page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"));
@@ -43,13 +42,30 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("height", 948);
     await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
 
-    const transitionStartedAt = Date.now();
+    await page.evaluate(() => {
+      const root = document.querySelector("[data-hub-entry-phase]")!;
+      const measurement = { clickedAt: 0, completedAt: 0 };
+      Object.assign(window, { portalCoverMeasurement: measurement });
+      document.querySelector("[data-cover-liquid-glass-button]")!.addEventListener("click", () => {
+        measurement.clickedAt = performance.now();
+      }, { once: true });
+      new MutationObserver(() => {
+        if (root.getAttribute("data-hub-entry-phase") === "hub") {
+          measurement.completedAt = performance.now();
+        }
+      }).observe(root, { attributes: true, attributeFilter: ["data-hub-entry-phase"] });
+    });
     await startButton.click();
     await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
     await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible({ timeout: 3_000 });
     await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
     await expect(page.getByRole("button", { name: /^管理 / })).toHaveCount(0);
-    expect(Date.now() - transitionStartedAt).toBeLessThan(3_000);
+    const transition = await page.evaluate(() => (window as unknown as {
+      portalCoverMeasurement: { clickedAt: number; completedAt: number };
+    }).portalCoverMeasurement);
+    expect(transition.clickedAt).toBeGreaterThan(0);
+    expect(transition.completedAt - transition.clickedAt).toBeGreaterThan(0);
+    expect(transition.completedAt - transition.clickedAt).toBeLessThan(3_000);
     await page.getByRole("button", { name: "纳入插件" }).click();
     await expect(page.getByRole("dialog", { name: "纳入插件" })).toBeVisible();
     await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
@@ -83,7 +99,7 @@ test.describe.serial("Plugin Portal", () => {
     expect(remoteRequests).toEqual([]);
   });
 
-  test("releases the cover loading mask when WebGL uses the static fallback", async ({ page }) => {
+  test("keeps Start usable when WebGL uses the static fallback", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.addInitScript(() => {
       const getContext = HTMLCanvasElement.prototype.getContext;
@@ -96,8 +112,8 @@ test.describe.serial("Plugin Portal", () => {
     await page.goto(`${portal.baseUrl}/#/`);
 
     await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "fallback");
-    await expect(page.locator("[data-cover-loading-overlay]")).toHaveAttribute("data-ready", "true");
-    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCSS("visibility", "hidden");
+    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCount(0);
+    await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start" })).toBeEnabled();
   });
 
