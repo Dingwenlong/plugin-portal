@@ -41,7 +41,7 @@ export function PortalThemeProvider({ children }: { children: ReactNode }) {
 export function ThemeToggle({ className = "", disabled = false }: { className?: string; disabled?: boolean }) {
   const context = useContext(ThemeContext);
   if (!context) return null;
-  const label = context.theme === "dark" ? "切换为白底黑字" : "切换为深色";
+  const label = context.theme === "dark" ? "切换为浅色" : "切换为深色";
   return <button
     aria-label={label}
     aria-pressed={context.theme === "light"}
@@ -52,6 +52,6 @@ export function ThemeToggle({ className = "", disabled = false }: { className?: 
     type="button"
   >
     {context.theme === "dark" ? <Sun aria-hidden="true" size={17} /> : <Moon aria-hidden="true" size={17} />}
-    <span className="portal-theme-label">{context.theme === "dark" ? "白底黑字" : "深色"}</span>
+    <span className="portal-theme-label">{context.theme === "dark" ? "浅色" : "深色"}</span>
   </button>;
 }

@@ -10,7 +10,9 @@ describe("PortalThemeProvider", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new DOMException("Blocked", "SecurityError"); });
     render(<PortalThemeProvider><ThemeToggle /></PortalThemeProvider>);
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "dark");
-    fireEvent.click(screen.getByRole("button", { name: "切换为白底黑字" }));
+    const toggle = screen.getByRole("button", { name: "切换为浅色" });
+    expect(toggle).toHaveTextContent("浅色");
+    fireEvent.click(toggle);
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
   });
 

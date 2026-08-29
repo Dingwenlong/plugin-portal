@@ -97,7 +97,7 @@ describe("PortalShell", () => {
     expect(screen.queryByRole("group", { name: "主题设置" })).not.toBeInTheDocument();
     fireEvent.click(settings);
     const panel = screen.getByRole("group", { name: "主题设置" });
-    fireEvent.click(within(panel).getByRole("button", { name: "切换为白底黑字" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "切换为浅色" }));
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
     expect(window.localStorage.getItem("plugin-portal.theme")).toBe("light");
     fireEvent.keyDown(document, { key: "Escape" });
@@ -121,7 +121,7 @@ describe("PortalShell", () => {
     rerender(<PortalShell client={client} initialHash="#/plugins/yusheng-inc/mcp" />);
     const settings = await screen.findByRole("button", { name: "外观设置" });
     fireEvent.click(settings);
-    fireEvent.click(within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为白底黑字" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为浅色" }));
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
     expect(screen.queryByRole("button", { name: /配置流程|新增 Prompt/ })).not.toBeInTheDocument();
   });
@@ -135,7 +135,7 @@ describe("PortalShell", () => {
     fireEvent.change(draft, { target: { value: "尚未保存的草稿" } });
     Object.defineProperty(window, "scrollY", { configurable: true, value: 160 });
     fireEvent.click(screen.getByRole("button", { name: "外观设置" }));
-    const toggle = within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为白底黑字" });
+    const toggle = within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为浅色" });
     act(() => toggle.focus());
     fireEvent.click(toggle);
     expect(toggle).toHaveFocus();
@@ -150,7 +150,7 @@ describe("PortalShell", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     try {
       render(<PortalShell client={createClient()} initialHash="#/hub" />);
-      const toggle = await screen.findByRole("button", { name: "切换为白底黑字" });
+      const toggle = await screen.findByRole("button", { name: "切换为浅色" });
       expect(document.documentElement).toHaveAttribute("data-portal-theme", "dark");
       fireEvent.click(toggle);
       expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");

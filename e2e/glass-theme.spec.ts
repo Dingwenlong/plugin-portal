@@ -23,7 +23,7 @@ async function setTheme(page: Page, theme: "dark" | "light") {
   if (current === theme) return;
   const settings = page.getByRole("button", { name: "外观设置" });
   if (await settings.isVisible()) await settings.click();
-  await page.getByRole("button", { name: theme === "light" ? "切换为白底黑字" : "切换为深色" }).click();
+  await page.getByRole("button", { name: theme === "light" ? "切换为浅色" : "切换为深色" }).click();
   if (await settings.isVisible()) await page.keyboard.press("Escape");
   await expect(page.locator("html")).toHaveAttribute("data-portal-theme", theme);
 }
@@ -90,7 +90,7 @@ test("themes the Hub, every plugin page and the inclusion dialog without changin
     }
     await page.goto(`${portal.baseUrl}/#/hub`);
     const toolbar = page.locator(".company-dev-hub-toolbar");
-    await expect(toolbar.getByRole("button", { name: theme === "light" ? "切换为深色" : "切换为白底黑字" })).toBeVisible();
+    await expect(toolbar.getByRole("button", { name: theme === "light" ? "切换为深色" : "切换为浅色" })).toBeVisible();
     const [toggle, include] = await Promise.all([
       toolbar.locator(".portal-theme-toggle").boundingBox(), page.getByRole("button", { name: "纳入插件" }).boundingBox(),
     ]);
@@ -118,7 +118,7 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
   await openPlugin(page, "prompts");
   const themePage = await context.newPage();
   await themePage.goto(`${portal.baseUrl}/#/hub`);
-  await expect(themePage.getByRole("button", { name: "切换为白底黑字" })).toBeVisible();
+  await expect(themePage.getByRole("button", { name: "切换为浅色" })).toBeVisible();
   await page.bringToFront();
   await page.getByRole("button", { name: "新增 Prompt", exact: true }).click();
   const prompt = page.getByRole("dialog", { name: "新增 Prompt" });
@@ -190,7 +190,7 @@ for (const width of [1600, 1120, 1024, 1023, 768, 390, 320]) {
       await expect(panel).toBeVisible();
       expect(await navigation.boundingBox()).toEqual(initialNav);
       expect(await capsule.boundingBox()).toEqual(initialCapsule);
-      await page.getByRole("button", { name: "切换为白底黑字" }).click();
+      await page.getByRole("button", { name: "切换为浅色" }).click();
       expect(await navigation.boundingBox()).toEqual(initialNav);
       await page.keyboard.press("Escape");
       await expect(settings).toBeFocused();
@@ -200,7 +200,7 @@ for (const width of [1600, 1120, 1024, 1023, 768, 390, 320]) {
       await expect(panel).toHaveCount(0);
     } else {
       await expect(page.getByRole("button", { name: "外观设置" })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "切换为白底黑字" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "切换为浅色" })).toBeVisible();
       await setTheme(page, "light");
       const more = page.getByRole("button", { name: "打开导航菜单" });
       await more.click();
@@ -339,6 +339,98 @@ test("keeps the original cover dark under a saved light theme", async ({ page })
 });
 
 for (const theme of ["dark", "light"] as const) {
+test(`renders measurable static glass depth without moving foreground content in ${theme} theme`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openPlugin(page);
+  await setTheme(page, theme);
+  await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.id = "glass-depth-fixture";
+    fixture.style.cssText = "position:fixed;z-index:1;inset:0;background:#74808c;pointer-events:none";
+    document.body.append(fixture);
+  });
+  const capsule = page.locator(".portal-capsule");
+  const glass = page.locator(".portal-capsule-glass");
+  const capsuleBox = (await capsule.boundingBox())!;
+  const padding = 24;
+  const clip = {
+    x: capsuleBox.x - padding,
+    y: capsuleBox.y - padding,
+    width: capsuleBox.width + padding * 2,
+    height: capsuleBox.height + padding * 2,
+  };
+  const foregroundBefore = await page.locator(".portal-capsule nav a").evaluateAll((links) => links.map((link) => {
+    const bounds = link.getBoundingClientRect();
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  }));
+  const depthPath = testInfo.outputPath(`${theme}-depth.png`);
+  const depth = await page.screenshot({ path: depthPath, clip });
+  await page.addStyleTag({ content: `
+    :root {
+      --glass-rim-top: transparent !important;
+      --glass-rim-left: transparent !important;
+      --glass-rim-bottom: transparent !important;
+      --glass-rim-right: transparent !important;
+      --glass-specular-primary: transparent !important;
+      --glass-specular-secondary: transparent !important;
+      --glass-contact-shadow: 0 0 0 rgba(0, 0, 0, 0) !important;
+      --glass-float-shadow: 0 0 0 rgba(0, 0, 0, 0) !important;
+    }
+  ` });
+  const flatPath = testInfo.outputPath(`${theme}-flat-control.png`);
+  const flat = await page.screenshot({ path: flatPath, clip });
+  const foregroundAfter = await page.locator(".portal-capsule nav a").evaluateAll((links) => links.map((link) => {
+    const bounds = link.getBoundingClientRect();
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  }));
+  const difference = await page.evaluate(async ({ before, after, inset, capsuleHeight }) => {
+    const decode = async (bytes: string) => {
+      const image = new Image(); image.src = `data:image/png;base64,${bytes}`; await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+      return { pixels: context.getImageData(0, 0, image.width, image.height).data, width: image.width, height: image.height };
+    };
+    const decorated = await decode(before); const control = await decode(after);
+    const averageDelta = (fromY: number, toY: number) => {
+      let delta = 0; let samples = 0;
+      for (let y = fromY; y < toY; y++) for (let x = inset + 48; x < decorated.width - inset - 48; x++) {
+        const offset = (y * decorated.width + x) * 4;
+        delta += Math.abs(decorated.pixels[offset] - control.pixels[offset]);
+        delta += Math.abs(decorated.pixels[offset + 1] - control.pixels[offset + 1]);
+        delta += Math.abs(decorated.pixels[offset + 2] - control.pixels[offset + 2]);
+        samples++;
+      }
+      return delta / samples / 3;
+    };
+    return {
+      topRim: averageDelta(inset, inset + 7),
+      center: averageDelta(inset + Math.floor(capsuleHeight / 2) - 3, inset + Math.floor(capsuleHeight / 2) + 4),
+      bottomRim: averageDelta(inset + capsuleHeight - 7, inset + capsuleHeight),
+      outsideShadow: averageDelta(inset + capsuleHeight + 2, decorated.height - 3),
+    };
+  }, {
+    before: depth.toString("base64"), after: flat.toString("base64"), inset: padding, capsuleHeight: capsuleBox.height,
+  });
+  const depthStyles = await glass.evaluate((node) => ({
+    beforeContent: getComputedStyle(node, "::before").content,
+    beforeShadow: getComputedStyle(node, "::before").boxShadow,
+    afterBackground: getComputedStyle(node, "::after").backgroundImage,
+    capsuleShadow: getComputedStyle(node.parentElement!).boxShadow,
+  }));
+  await testInfo.attach(`${theme}-depth`, { path: depthPath, contentType: "image/png" });
+  await testInfo.attach(`${theme}-flat-control`, { path: flatPath, contentType: "image/png" });
+  await testInfo.attach(`${theme}-depth-difference`, { body: JSON.stringify(difference), contentType: "application/json" });
+  expect(difference.topRim).toBeGreaterThan(1.5);
+  expect(difference.bottomRim).toBeGreaterThan(1.5);
+  expect(difference.outsideShadow).toBeGreaterThan(.8);
+  expect(difference.center).toBeLessThan(Math.max(difference.topRim, difference.bottomRim));
+  expect(depthStyles.beforeContent).toBe('""');
+  expect(depthStyles.beforeShadow).not.toBe("none");
+  expect(depthStyles.afterBackground).not.toBe("none");
+  expect(depthStyles.capsuleShadow.split(",").length).toBeGreaterThanOrEqual(2);
+  expect(foregroundAfter).toEqual(foregroundBefore);
+});
+
 test(`refracts actual high contrast content without warping the foreground in ${theme} theme`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await openPlugin(page);
