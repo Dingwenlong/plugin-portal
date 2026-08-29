@@ -354,6 +354,8 @@ test(`renders measurable static glass depth without moving foreground content in
   });
   const capsule = page.locator(".portal-capsule");
   const glass = page.locator(".portal-capsule-glass");
+  const fog = page.locator(".portal-capsule-glass-fog");
+  const optics = page.locator(".portal-capsule-glass-optics");
   const capsuleBox = (await capsule.boundingBox())!;
   const padding = 24;
   const clip = {
@@ -414,11 +416,14 @@ test(`renders measurable static glass depth without moving foreground content in
   }, {
     before: depth.toString("base64"), after: flat.toString("base64"), inset: padding, capsuleHeight: capsuleBox.height,
   });
-  const depthStyles = await glass.evaluate((node) => ({
-    beforeContent: getComputedStyle(node, "::before").content,
-    beforeShadow: getComputedStyle(node, "::before").boxShadow,
-    afterBackground: getComputedStyle(node, "::after").backgroundImage,
-    capsuleShadow: getComputedStyle(node.parentElement!).boxShadow,
+  const depthStyles = await optics.evaluate((node) => ({
+    opticsShadow: getComputedStyle(node).boxShadow,
+    opticsBackground: getComputedStyle(node).backgroundImage,
+    capsuleShadow: getComputedStyle(node.closest(".portal-capsule")!).boxShadow,
+  }));
+  const fogStyles = await fog.evaluate((node) => ({
+    backdropFilter: getComputedStyle(node).backdropFilter,
+    backgroundColor: getComputedStyle(node).backgroundColor,
   }));
   await testInfo.attach(`${theme}-depth`, { path: depthPath, contentType: "image/png" });
   await testInfo.attach(`${theme}-flat-control`, { path: flatPath, contentType: "image/png" });
@@ -427,10 +432,11 @@ test(`renders measurable static glass depth without moving foreground content in
   expect(difference.bottomRim).toBeGreaterThan(1.5);
   expect(difference.outsideShadow).toBeGreaterThan(.8);
   expect(difference.center).toBeLessThan(Math.max(difference.topRim, difference.bottomRim));
-  expect(depthStyles.beforeContent).toBe('""');
-  expect(depthStyles.beforeShadow).not.toBe("none");
-  expect(depthStyles.afterBackground).not.toBe("none");
+  expect(depthStyles.opticsShadow).not.toBe("none");
+  expect(depthStyles.opticsBackground).not.toBe("none");
   expect(depthStyles.capsuleShadow.split(",").length).toBeGreaterThanOrEqual(2);
+  expect(fogStyles.backdropFilter).toContain("blur(22px)");
+  expect(fogStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   expect(foregroundAfter).toEqual(foregroundBefore);
 });
 
@@ -440,6 +446,8 @@ test(`refracts actual high contrast content without warping the foreground in ${
   await setTheme(page, theme);
   const glass = page.locator(".portal-capsule-glass");
   await expect(glass).toHaveAttribute("data-glass-mode", "refractive");
+  const refraction = page.locator(".portal-capsule-glass-refraction");
+  await expect(refraction).toHaveCSS("opacity", "0.35");
   // The fixture is page content, not a texture inside the glass filter.
   await page.evaluate(() => {
     const pattern = document.createElement("div");
@@ -466,7 +474,10 @@ test(`refracts actual high contrast content without warping the foreground in ${
   const foreground = await page.locator(".portal-capsule nav").screenshot();
   const refractedPath = testInfo.outputPath("refracted.png");
   const refracted = await capsule.screenshot({ path: refractedPath });
-  await glass.evaluate((node) => { (node as HTMLElement).style.backdropFilter = "none"; });
+  await refraction.evaluate((node) => {
+    (node as HTMLElement).style.backdropFilter = "none";
+    (node as HTMLElement).style.webkitBackdropFilter = "none";
+  });
   const plainPath = testInfo.outputPath("unfiltered-control.png");
   const plain = await capsule.screenshot({ path: plainPath });
   const foregroundPlain = await page.locator(".portal-capsule nav").screenshot();
@@ -535,5 +546,59 @@ test(`refracts actual high contrast content without warping the foreground in ${
   expect(difference.boundsAfter).toEqual(difference.boundsBefore);
   expect(Math.abs(difference.glyphPixelsAfter - difference.glyphPixelsBefore) / difference.glyphPixels).toBeLessThan(.01);
   expect(difference.sharedGlyphPixels / difference.glyphPixels).toBeGreaterThan(.85);
+});
+
+test(`visibly fogs high contrast page content behind the capsule in ${theme} theme`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openPlugin(page);
+  await setTheme(page, theme);
+  await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.id = "fog-contrast-fixture";
+    fixture.textContent = "HIGH CONTRAST PAGE CONTENT 0123456789";
+    fixture.style.cssText = "position:fixed;z-index:1;top:0;left:0;width:100%;height:112px;background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 16px);color:#ff004c;font:bold 34px monospace;line-height:88px;text-align:center;";
+    document.body.append(fixture);
+    document.querySelectorAll(".portal-capsule > .portal-brand,.portal-capsule nav,.portal-capsule-actions").forEach((node) => {
+      (node as HTMLElement).style.visibility = "hidden";
+    });
+  });
+  const capsule = page.locator(".portal-capsule");
+  const foggedPath = testInfo.outputPath(`${theme}-fogged.png`);
+  const fogged = await capsule.screenshot({ path: foggedPath });
+  await page.locator(".portal-capsule-glass-fog").evaluate((node) => {
+    const element = node as HTMLElement;
+    element.style.backdropFilter = "none";
+    element.style.webkitBackdropFilter = "none";
+    element.style.background = "transparent";
+  });
+  await page.locator(".portal-capsule-glass-refraction").evaluate((node) => {
+    (node as HTMLElement).style.display = "none";
+  });
+  const clearPath = testInfo.outputPath(`${theme}-clear-control.png`);
+  const clear = await capsule.screenshot({ path: clearPath });
+  const contrast = await page.evaluate(async ({ foggedBytes, clearBytes }) => {
+    const decode = async (bytes: string) => {
+      const image = new Image(); image.src = `data:image/png;base64,${bytes}`; await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+      return { pixels: context.getImageData(0, 0, image.width, image.height).data, width: image.width, height: image.height };
+    };
+    const deviation = ({ pixels, width, height }: Awaited<ReturnType<typeof decode>>) => {
+      let sum = 0; let squareSum = 0; let count = 0;
+      for (let y = 16; y < height - 16; y++) for (let x = 120; x < width - 120; x++) {
+        const offset = (y * width + x) * 4;
+        const luminance = pixels[offset] * .2126 + pixels[offset + 1] * .7152 + pixels[offset + 2] * .0722;
+        sum += luminance; squareSum += luminance * luminance; count++;
+      }
+      const mean = sum / count;
+      return Math.sqrt(Math.max(0, squareSum / count - mean * mean));
+    };
+    return { fogged: deviation(await decode(foggedBytes)), clear: deviation(await decode(clearBytes)) };
+  }, { foggedBytes: fogged.toString("base64"), clearBytes: clear.toString("base64") });
+  await testInfo.attach(`${theme}-fogged`, { path: foggedPath, contentType: "image/png" });
+  await testInfo.attach(`${theme}-clear-control`, { path: clearPath, contentType: "image/png" });
+  await testInfo.attach(`${theme}-fog-contrast`, { body: JSON.stringify(contrast), contentType: "application/json" });
+  expect(contrast.clear).toBeGreaterThan(30);
+  expect(contrast.fogged).toBeLessThan(contrast.clear * .65);
 });
 }

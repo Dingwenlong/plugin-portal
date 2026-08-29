@@ -71,6 +71,18 @@ test.describe("original cover", () => {
       }).observe(root, { attributes: true, attributeFilter: ["data-hub-entry-phase"] });
     });
     await start.press("Enter");
+    const cover = page.locator("[data-hub-cover]");
+    await expect(cover).toHaveAttribute("data-transition-mode", "scaled");
+    const presentation = await buttonCanvas.evaluate((canvas: HTMLCanvasElement) => ({
+      backingWidth: canvas.width,
+      clientWidth: canvas.clientWidth,
+      expectedWidth: Math.min(
+        4096,
+        Math.floor(Math.hypot(window.innerWidth, window.innerHeight) * 1.05 * Math.min(window.devicePixelRatio || 1, 2)),
+      ),
+    }));
+    expect(presentation.clientWidth).toBe(112);
+    expect(presentation.backingWidth).toBeGreaterThanOrEqual(presentation.expectedWidth - 2);
     await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "hub", { timeout: 3_000 });
     const measurement = await page.evaluate(() => (window as unknown as {
       coverKeyboardMeasurement: { clickedAt: number; completedAt: number };

@@ -12,7 +12,6 @@ export async function installMockWebGpu(target: InitScriptTarget, deviceDelayMs 
       setPipeline: noop,
     };
     const createDevice = () => {
-      let submissions = 0;
       return {
         addEventListener: noop,
         createBindGroup: () => ({}),
@@ -28,12 +27,11 @@ export async function installMockWebGpu(target: InitScriptTarget, deviceDelayMs 
         }),
         createTexture: () => ({ createView: () => ({}), destroy: noop }),
         destroy: noop,
+        limits: { maxTextureDimension2D: 8192 },
         lost: new Promise(() => undefined),
         queue: {
-          submit: () => {
-            submissions += 1;
-            if (submissions > 1) throw new Error("Mock WebGPU completed its first frame.");
-          },
+          onSubmittedWorkDone: async () => undefined,
+          submit: noop,
           writeBuffer: noop,
         },
       };

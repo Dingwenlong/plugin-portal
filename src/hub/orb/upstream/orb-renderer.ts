@@ -14,12 +14,54 @@ export type OrbRendererOptions = {
   onReady: () => void;
 };
 
+export const MAX_PRESENTATION_TEXTURE_SIZE = 4096;
+
+export function resolveOrbPresentationSize({
+  clientWidth,
+  clientHeight,
+  devicePixelRatio,
+  presentationScale,
+  deviceMaximum,
+}: {
+  clientWidth: number;
+  clientHeight: number;
+  devicePixelRatio: number;
+  presentationScale: number;
+  deviceMaximum: number;
+}): { width: number; height: number } {
+  const cssWidth = Number.isFinite(clientWidth) ? Math.max(1, clientWidth) : 1;
+  const cssHeight = Number.isFinite(clientHeight) ? Math.max(1, clientHeight) : 1;
+  const dpr = Number.isFinite(devicePixelRatio)
+    ? Math.min(2, Math.max(1, devicePixelRatio))
+    : 1;
+  const scale = Number.isFinite(presentationScale)
+    ? Math.max(1, presentationScale)
+    : 1;
+  const reportedMaximum = Number.isFinite(deviceMaximum) && deviceMaximum > 0
+    ? deviceMaximum
+    : MAX_PRESENTATION_TEXTURE_SIZE;
+  const maximum = Math.max(1, Math.floor(Math.min(MAX_PRESENTATION_TEXTURE_SIZE, reportedMaximum)));
+  const rawWidth = Math.max(1, cssWidth * dpr * scale);
+  const rawHeight = Math.max(1, cssHeight * dpr * scale);
+  const fit = Math.min(1, maximum / Math.max(rawWidth, rawHeight));
+
+  return {
+    width: Math.max(1, Math.floor(rawWidth * fit)),
+    height: Math.max(1, Math.floor(rawHeight * fit)),
+  };
+}
+
+export type OrbRendererController = {
+  prepareScale: (scale: number) => Promise<boolean>;
+  stop: () => void;
+};
+
 export function createOrbRenderer({
   canvas,
   getTarget,
   onError,
   onReady,
-}: OrbRendererOptions): () => void {
+}: OrbRendererOptions): OrbRendererController {
   let disposed = false;
   let animationFrame = 0;
   let device: GPUDevice | null = null;
@@ -28,11 +70,27 @@ export function createOrbRenderer({
   let failed = false;
   let lastFrameAt: number | null = null;
   let motionPhase = 0;
+  let requestedPresentationScale = 1;
+  let renderedPresentationScale = 0;
+  let preparationSequence = 0;
+  let pendingPreparation: {
+    id: number;
+    scale: number;
+    submitted: boolean;
+    resolve: (ready: boolean) => void;
+  } | null = null;
+
+  function settlePreparation(ready: boolean): void {
+    const preparation = pendingPreparation;
+    pendingPreparation = null;
+    preparation?.resolve(ready);
+  }
 
   function fail(error: Error): void {
     if (disposed || failed) return;
     failed = true;
     cancelAnimationFrame(animationFrame);
+    settlePreparation(false);
     ribbonTarget?.destroy();
     device?.destroy();
     onError(error);
@@ -181,13 +239,17 @@ export function createOrbRenderer({
     });
 
     function resize(): void {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-      const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      const size = resolveOrbPresentationSize({
+        clientWidth: canvas.clientWidth,
+        clientHeight: canvas.clientHeight,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        presentationScale: requestedPresentationScale,
+        deviceMaximum: device?.limits?.maxTextureDimension2D ?? MAX_PRESENTATION_TEXTURE_SIZE,
+      });
 
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
+      if (canvas.width !== size.width || canvas.height !== size.height) {
+        canvas.width = size.width;
+        canvas.height = size.height;
         ribbonTarget?.destroy();
         ribbonTarget = null;
         ribbonCompositeBindGroup = null;
@@ -272,12 +334,40 @@ export function createOrbRenderer({
         pass.draw(3, 1, 0, 0);
         pass.end();
         device.queue.submit([encoder.finish()]);
+        renderedPresentationScale = requestedPresentationScale;
+        const preparation = pendingPreparation;
+        if (preparation && !preparation.submitted && preparation.scale === renderedPresentationScale) {
+          const submittedPreparation = preparation;
+          submittedPreparation.submitted = true;
+          const completion = typeof device.queue.onSubmittedWorkDone === "function"
+            ? device.queue.onSubmittedWorkDone()
+            : Promise.resolve();
+          void completion.then(() => {
+            if (disposed || failed || pendingPreparation?.id !== submittedPreparation.id) return;
+            settlePreparation(true);
+          }).catch(() => {
+            if (pendingPreparation?.id === submittedPreparation.id) {
+              requestedPresentationScale = 1;
+              settlePreparation(false);
+            }
+          });
+        }
         if (!readyNotified) {
           readyNotified = true;
           onReady();
         }
         animationFrame = requestAnimationFrame(frame);
       } catch (error) {
+        if (requestedPresentationScale > 1 && pendingPreparation) {
+          requestedPresentationScale = 1;
+          renderedPresentationScale = 0;
+          ribbonTarget?.destroy();
+          ribbonTarget = null;
+          ribbonCompositeBindGroup = null;
+          settlePreparation(false);
+          animationFrame = requestAnimationFrame(frame);
+          return;
+        }
         fail(error instanceof Error ? error : new Error(String(error)));
       }
     }
@@ -289,10 +379,28 @@ export function createOrbRenderer({
     fail(error instanceof Error ? error : new Error(String(error)));
   });
 
-  return () => {
+  function stop(): void {
     disposed = true;
     cancelAnimationFrame(animationFrame);
+    settlePreparation(false);
     ribbonTarget?.destroy();
     device?.destroy();
-  };
+  }
+
+  function prepareScale(scale: number): Promise<boolean> {
+    if (disposed || failed || !device || !readyNotified) return Promise.resolve(false);
+    const normalizedScale = Number.isFinite(scale) ? Math.max(1, scale) : 1;
+    if (renderedPresentationScale === normalizedScale && !pendingPreparation) {
+      return Promise.resolve(true);
+    }
+
+    settlePreparation(false);
+    requestedPresentationScale = normalizedScale;
+    const id = ++preparationSequence;
+    return new Promise<boolean>((resolve) => {
+      pendingPreparation = { id, scale: normalizedScale, submitted: false, resolve };
+    });
+  }
+
+  return { prepareScale, stop };
 }

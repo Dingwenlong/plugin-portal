@@ -26,7 +26,12 @@
   --scrim: rgba(0, 0, 0, .76);
   --error: #ffb4ab;
   --modal-shadow: 0 24px 80px rgba(0, 0, 0, .45);
-  --glass-tint: rgba(12, 18, 28, .16);
+  --glass-tint: rgba(10, 15, 24, .48);
+  --glass-fog-blur: 22px;
+  --glass-fog-saturation: 110%;
+  --glass-refraction-edge: 12px;
+  --glass-refraction-opacity: .35;
+  --glass-edge-tint: rgba(10, 15, 24, .24);
   --glass-border: rgba(204, 225, 245, .24);
   --glass-rim-top: rgba(246, 252, 255, .58);
   --glass-rim-left: rgba(177, 218, 248, .28);
@@ -61,7 +66,8 @@
   --scrim: rgba(23, 32, 45, .3);
   --error: #ab2828;
   --modal-shadow: 0 24px 80px rgba(24, 41, 64, .16);
-  --glass-tint: rgba(255, 255, 255, .18);
+  --glass-tint: rgba(255, 255, 255, .62);
+  --glass-edge-tint: rgba(255, 255, 255, .34);
   --glass-border: rgba(113, 132, 153, .28);
   --glass-rim-top: rgba(255, 255, 255, .96);
   --glass-rim-left: rgba(255, 255, 255, .72);
@@ -975,29 +981,46 @@ textarea {
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
-  background: var(--glass-tint);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
-.portal-capsule-glass::before,
-.portal-capsule-glass::after {
+.portal-capsule-glass-fog,
+.portal-capsule-glass-refraction,
+.portal-capsule-glass-optics {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  content: "";
   pointer-events: none;
 }
 
-.portal-capsule-glass::before {
+.portal-capsule-glass-fog {
+  z-index: 1;
+  inset: var(--glass-refraction-edge);
+  background: var(--glass-tint);
+  backdrop-filter: blur(var(--glass-fog-blur)) saturate(var(--glass-fog-saturation));
+}
+
+.portal-capsule-glass-refraction {
+  z-index: 0;
+  padding: var(--glass-refraction-edge);
+  background: var(--glass-edge-tint);
+  opacity: var(--glass-refraction-opacity);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.portal-capsule-glass-optics {
+  z-index: 2;
   box-shadow:
     inset 0 2px 2px var(--glass-rim-top),
     inset 2px 0 2px var(--glass-rim-left),
     inset 0 -3px 4px var(--glass-rim-bottom),
     inset -2px 0 3px var(--glass-rim-right);
-}
-
-.portal-capsule-glass::after {
   background:
     radial-gradient(ellipse 52% 90% at 17% -28%, var(--glass-specular-primary), transparent 66%),
     linear-gradient(168deg, var(--glass-specular-secondary), transparent 21%, transparent 78%, var(--glass-specular-secondary));
@@ -1110,12 +1133,16 @@ textarea {
 .hub-entry-button:disabled { cursor: default; pointer-events: none; }
 .hub-entry-button.is-engulfing { pointer-events: none; animation: hub-entry-engulf 680ms cubic-bezier(.2, .72, .18, 1) 120ms both; }
 .hub-entry-button.is-engulfing .portal-cover-enter-label { animation: hub-entry-label-fade 120ms ease both; }
+.hub-entry-cover-layer[data-transition-mode="fade"] .hub-entry-button.is-engulfing {
+  animation: hub-entry-fallback-cover 120ms ease both;
+}
 .hub-entry-button.is-revealing { pointer-events: none; animation: hub-entry-reveal 360ms ease both; }
 .hub-entry-button.is-revealing .portal-cover-enter-label { opacity: 0; visibility: hidden; }
 .hub-entry-cover-layer[data-phase="revealing"] { animation: hub-entry-layer-reveal 360ms ease both; }
 
 @keyframes hub-entry-label-fade { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
 @keyframes hub-entry-engulf { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(var(--hub-entry-cover-scale)); } }
+@keyframes hub-entry-fallback-cover { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: .35; transform: translate(-50%, -50%) scale(1); } }
 @keyframes hub-entry-reveal { from { opacity: 1; transform: translate(-50%, -50%) scale(var(--hub-entry-cover-scale)); } to { opacity: 0; transform: translate(-50%, -50%) scale(var(--hub-entry-cover-scale)); } }
 @keyframes hub-entry-layer-reveal { from { opacity: 1; } to { opacity: 0; } }
 @keyframes hub-entry-reduced-cover { from { opacity: 1; } to { opacity: .35; } }

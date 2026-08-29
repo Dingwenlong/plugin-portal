@@ -13,7 +13,10 @@ import { ThemeToggle } from "../portal/PortalTheme";
 import { portalHref } from "../portal/routes";
 import type { PluginCatalog } from "../portal/types";
 import { CoverAccretionBackground } from "./CoverAccretionBackground";
-import { CoverLiquidGlassButton } from "./CoverLiquidGlassButton";
+import {
+  CoverLiquidGlassButton,
+  type CoverLiquidGlassButtonHandle,
+} from "./CoverLiquidGlassButton";
 
 export type HubRoute = "cover" | "hub";
 export type EntryPhase = "idle" | "engulfing" | "revealing" | "hub";
@@ -21,14 +24,20 @@ type EntryEvent = "start" | "covered" | "revealed" | "safety-timeout" | "reset";
 
 const START_DIAMETER = 112;
 const TIMING = Object.freeze({
+  scalePreparationMs: 250,
   labelFadeMs: 120,
   engulfMs: 680,
   revealMs: 360,
   reducedPhaseMs: 120,
   safetyBufferMs: 150,
 });
-const ENGULF_ANIMATIONS = new Set(["hub-entry-engulf", "hub-entry-reduced-cover"]);
+const ENGULF_ANIMATIONS = new Set([
+  "hub-entry-engulf",
+  "hub-entry-fallback-cover",
+  "hub-entry-reduced-cover",
+]);
 const REVEAL_ANIMATIONS = new Set(["hub-entry-reveal", "hub-entry-reduced-reveal"]);
+type EntryTransitionMode = "scaled" | "fade";
 
 export function reduceEntryPhase(phase: EntryPhase, event: EntryEvent): EntryPhase {
   if (event === "reset") return "idle";
@@ -98,6 +107,9 @@ function GenericHubView({
   onCoverAnimationEnd,
   reducedMotion = false,
   coverScale = 1,
+  preparing = false,
+  transitionMode = "scaled",
+  buttonRef,
   firstEntryRef,
   includeButtonRef,
   onInclude,
@@ -111,6 +123,9 @@ function GenericHubView({
   onCoverAnimationEnd?: (event: AnimationEvent<HTMLElement>) => void;
   reducedMotion?: boolean;
   coverScale?: number;
+  preparing?: boolean;
+  transitionMode?: EntryTransitionMode;
+  buttonRef?: RefObject<CoverLiquidGlassButtonHandle | null>;
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
@@ -131,6 +146,9 @@ function GenericHubView({
     {showCover && <HubCover
       effectivePhase={effectivePhase}
       coverScale={coverScale}
+      preparing={preparing}
+      transitionMode={transitionMode}
+      buttonRef={buttonRef}
       onStart={onStart}
       onButtonAnimationEnd={onButtonAnimationEnd}
       onCoverAnimationEnd={onCoverAnimationEnd}
@@ -141,12 +159,18 @@ function GenericHubView({
 function HubCover({
   effectivePhase,
   coverScale,
+  preparing,
+  transitionMode,
+  buttonRef,
   onStart,
   onButtonAnimationEnd,
   onCoverAnimationEnd,
 }: {
   effectivePhase: EntryPhase;
   coverScale: number;
+  preparing: boolean;
+  transitionMode: EntryTransitionMode;
+  buttonRef?: RefObject<CoverLiquidGlassButtonHandle | null>;
   onStart: () => void;
   onButtonAnimationEnd?: (event: AnimationEvent<HTMLButtonElement>) => void;
   onCoverAnimationEnd?: (event: AnimationEvent<HTMLElement>) => void;
@@ -158,6 +182,8 @@ function HubCover({
       className="hub-cover hub-entry-cover-layer"
       data-hub-cover
       data-phase={effectivePhase}
+      data-transition-mode={transitionMode}
+      data-transition-preparing={preparing || undefined}
       onAnimationEnd={onCoverAnimationEnd}
     >
       <h1 className="sr-only">Plugin Portal</h1>
@@ -174,8 +200,9 @@ function HubCover({
         正在加载封面
       </p>}
       <CoverLiquidGlassButton
+        ref={buttonRef}
         className={`hub-entry-button is-${effectivePhase}`}
-        disabled={effectivePhase !== "idle"}
+        disabled={effectivePhase !== "idle" || preparing}
         style={entryStyle}
         onClick={onStart}
         onAnimationEnd={onButtonAnimationEnd}
@@ -206,6 +233,8 @@ function InteractiveHub({
   const initial = route === "hub" ? "hub" : "idle";
   const [phase, setPhase] = useState<EntryPhase>(initial);
   const [coverScale, setCoverScale] = useState(1);
+  const [preparing, setPreparing] = useState(false);
+  const [transitionMode, setTransitionMode] = useState<EntryTransitionMode>("scaled");
   const [reducedMotion, setReducedMotion] = useState(false);
   const phaseRef = useRef<EntryPhase>(initial);
   const timerRef = useRef<number | null>(null);
@@ -213,6 +242,9 @@ function InteractiveHub({
   const focusAfterTransitionRef = useRef(false);
   const firstEntryRef = useRef<HTMLAnchorElement>(null);
   const includeButtonRef = useRef<HTMLButtonElement>(null);
+  const buttonRef = useRef<CoverLiquidGlassButtonHandle>(null);
+  const preparingRef = useRef(false);
+  const preparationTokenRef = useRef(0);
 
   function clearTimer() {
     if (timerRef.current === null) return;
@@ -252,11 +284,40 @@ function InteractiveHub({
     return next;
   }
 
-  function start() {
-    if (phaseRef.current !== "idle") return;
-    setCoverScale(Math.max(1, Math.hypot(window.innerWidth, window.innerHeight) / START_DIAMETER * 1.05));
+  async function start() {
+    if (phaseRef.current !== "idle" || preparingRef.current) return;
+    preparingRef.current = true;
+    setPreparing(true);
+    const token = ++preparationTokenRef.current;
+    const targetScale = Math.max(
+      1,
+      Math.hypot(window.innerWidth, window.innerHeight) / START_DIAMETER * 1.05,
+    );
     focusAfterTransitionRef.current = true;
     navigatedRef.current = false;
+    let prepared = false;
+    if (!reducedMotion && buttonRef.current) {
+      let timeout = 0;
+      try {
+        prepared = await Promise.race([
+          buttonRef.current.prepareScale(targetScale),
+          new Promise<boolean>((resolve) => {
+            timeout = window.setTimeout(() => resolve(false), TIMING.scalePreparationMs);
+          }),
+        ]);
+      } catch {
+        prepared = false;
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    if (token !== preparationTokenRef.current || phaseRef.current !== "idle") return;
+    if (!prepared && !reducedMotion) void buttonRef.current?.prepareScale(1);
+    setCoverScale(prepared ? targetScale : 1);
+    setTransitionMode(prepared ? "scaled" : "fade");
+    preparingRef.current = false;
+    setPreparing(false);
     transition("start");
     scheduleSafetyTimeout("engulfing");
   }
@@ -278,6 +339,11 @@ function InteractiveHub({
   }, []);
 
   useEffect(() => {
+    preparationTokenRef.current += 1;
+    preparingRef.current = false;
+    setPreparing(false);
+    setCoverScale(1);
+    setTransitionMode("scaled");
     if (route === "cover") {
       if (phaseRef.current !== "idle") {
         clearTimer();
@@ -292,7 +358,10 @@ function InteractiveHub({
     }
   }, [route]);
 
-  useEffect(() => () => clearTimer(), []);
+  useEffect(() => () => {
+    preparationTokenRef.current += 1;
+    clearTimer();
+  }, []);
 
   useEffect(() => {
     if (phase === "hub" && focusAfterTransitionRef.current) {
@@ -308,6 +377,9 @@ function InteractiveHub({
     phase={phase}
     reducedMotion={reducedMotion}
     coverScale={coverScale}
+    preparing={preparing}
+    transitionMode={transitionMode}
+    buttonRef={buttonRef}
     firstEntryRef={firstEntryRef}
     includeButtonRef={includeButtonRef}
     onInclude={onInclude}

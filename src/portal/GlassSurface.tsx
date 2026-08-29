@@ -52,8 +52,13 @@ export function GlassSurface() {
     className="portal-capsule-glass"
     data-glass-mode={map ? "refractive" : "clear"}
     ref={surface}
-    style={map ? { backdropFilter: `url("#${id}")`, WebkitBackdropFilter: `url("#${id}")` } : undefined}
   >
+    {map && <div
+      className="portal-capsule-glass-refraction"
+      style={{ backdropFilter: `url("#${id}")`, WebkitBackdropFilter: `url("#${id}")` }}
+    />}
+    <div className="portal-capsule-glass-fog" />
+    <div className="portal-capsule-glass-optics" />
     {map && <svg className="portal-glass-definitions" width="0" height="0" focusable="false">
       <defs>
         <filter id={id} x="0" y="0" width={map.width} height={map.height} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">

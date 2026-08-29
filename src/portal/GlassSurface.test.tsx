@@ -46,9 +46,16 @@ describe("GlassSurface", () => {
 
   it("builds a noninteractive local displacement filter with separate color channels", () => {
     const { container } = render(<GlassSurface />);
+    const surface = container.firstElementChild;
+    const fog = container.querySelector(".portal-capsule-glass-fog");
+    const refraction = container.querySelector<HTMLElement>(".portal-capsule-glass-refraction");
     expect(glassMaps.get).toHaveBeenCalledExactlyOnceWith(1440, 62);
-    expect(container.firstElementChild).toHaveAttribute("data-glass-mode", "refractive");
-    expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
+    expect(surface).toHaveAttribute("data-glass-mode", "refractive");
+    expect(surface).toHaveAttribute("aria-hidden", "true");
+    expect(fog).not.toBeNull();
+    expect(refraction).not.toBeNull();
+    expect(refraction?.style.backdropFilter).toContain(`url("#capsule-glass-`);
+    expect((surface as HTMLElement).style.backdropFilter).toBe("");
     expect(container.querySelectorAll("feDisplacementMap")).toHaveLength(3);
     expect(container.querySelector("feImage")).toHaveAttribute("href", "data:image/png;base64,bWFw");
     expect(container.querySelector("button, a, nav")).toBeNull();
@@ -74,6 +81,8 @@ describe("GlassSurface", () => {
     reduced = true;
     const { container } = render(<GlassSurface />);
     expect(container.firstElementChild).toHaveAttribute("data-glass-mode", "clear");
+    expect(container.querySelector(".portal-capsule-glass-fog")).not.toBeNull();
+    expect(container.querySelector(".portal-capsule-glass-refraction")).toBeNull();
     expect(glassMaps.get).not.toHaveBeenCalled();
     reduced = false;
     act(() => mediaChanged());
@@ -83,6 +92,8 @@ describe("GlassSurface", () => {
     act(() => mediaChanged());
     flush();
     expect(container.querySelector("svg")).toBeNull();
+    expect(container.querySelector(".portal-capsule-glass-fog")).not.toBeNull();
+    expect(container.querySelector(".portal-capsule-glass-refraction")).toBeNull();
     expect(container.firstElementChild).toHaveAttribute("data-glass-mode", "clear");
   });
 
