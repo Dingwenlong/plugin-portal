@@ -1,8 +1,11 @@
-import { spawn } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+
+import { reserveLoopbackPort, startIsolatedHttpsProxy, type IsolatedHttpsProxy } from "./httpsProxy";
 
 interface PluginListItem {
   pluginKey: string;
@@ -27,8 +30,15 @@ export interface TestPortal {
   snapshot(pluginKey: string): Promise<{ plugin: { version: string } }>;
   preparePlugin(id: string, version: string, displayName: string): string;
   preparePickerPlugin(version: string): void;
+  pluginArchivePath: string;
+  downloadArchivePath: string;
+  seedPublishedDownload(fileName: string): void;
+  expectedCandidateSha256: string;
+  hasPublishedDownload(fileName: string): boolean;
+  publishedDownloadSha256(fileName: string): string | null;
   seedUserContent(): Promise<void>;
   startReadOnly(): Promise<string>;
+  startRemoteManagement(): Promise<string>;
   stop(): Promise<void>;
 }
 
@@ -37,8 +47,16 @@ export async function startTestPortal(): Promise<TestPortal> {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "plugin-portal-e2e-"));
   const dataRoot = join(temporaryRoot, "data");
   const pluginRoot = join(temporaryRoot, "plugins");
+  const downloadRoot = join(temporaryRoot, "downloads");
+  const pluginArchivePath = join(temporaryRoot, "project-delivery-hub-plugin.zip");
+  const downloadArchivePath = join(temporaryRoot, "project-delivery-hub-download.zip");
+  const archiveBytes = Buffer.concat([Buffer.from("PK\x05\x06", "binary"), Buffer.alloc(18), Buffer.from("portal candidate")]);
   mkdirSync(dataRoot, { recursive: true });
   mkdirSync(pluginRoot, { recursive: true });
+  mkdirSync(downloadRoot, { recursive: true });
+  writeFileSync(downloadArchivePath, archiveBytes);
+  writeFileSync(join(downloadRoot, "project-delivery-hub-3.7.17-company-dev.zip"), archiveBytes);
+  const expectedCandidateSha256 = createHash("sha256").update(archiveBytes).digest("hex");
   const pickerPluginRoot = join(pluginRoot, "picker-project-delivery-hub");
   cpSync(join(repositoryRoot, "tests", "fixtures", "plugins", "minimal"), pickerPluginRoot, { recursive: true });
   const pickerManifestPath = join(pickerPluginRoot, ".codex-plugin", "plugin.json");
@@ -54,6 +72,7 @@ export async function startTestPortal(): Promise<TestPortal> {
       identity: { id: "sample-skill", name: "sample-skill" },
       portal: { displayName: "示例技能", category: "implementation" },
     }, null, 2)}\n`, "utf8");
+    writePluginArchive(pickerPluginRoot, pluginArchivePath);
   };
   preparePickerPlugin("3.7.19");
 
@@ -68,11 +87,18 @@ export async function startTestPortal(): Promise<TestPortal> {
       process.env.PORTAL_TEST_WEB_ROOT ?? join(repositoryRoot, "dist"),
       "--picker-root",
       pickerPluginRoot,
+      "--archive-path",
+      downloadArchivePath,
+      "--download-root",
+      downloadRoot,
+      "--candidate-version",
+      "3.7.19",
     ],
     { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] },
   );
   const lineReader = createInterface({ input: server.stdout });
   const readers: ReturnType<typeof spawn>[] = [];
+  const proxies: IsolatedHttpsProxy[] = [];
   const firstLine = await Promise.race([
     new Promise<string>((resolveLine, rejectLine) => {
       lineReader.once("line", resolveLine);
@@ -117,7 +143,7 @@ export async function startTestPortal(): Promise<TestPortal> {
       method: "POST",
       session: true,
       body: {
-        pluginRoot: rootFor(id, version, displayName),
+        source: { kind: "server-directory", path: rootFor(id, version, displayName) },
         target: "company-dev",
         expectedPluginId: id,
         approvedRulePaths: ["rules/public.md"],
@@ -137,6 +163,15 @@ export async function startTestPortal(): Promise<TestPortal> {
     snapshot: (pluginKey) => api(`/api/plugins/${encodeURIComponent(pluginKey)}/snapshot`),
     preparePlugin: rootFor,
     preparePickerPlugin,
+    pluginArchivePath,
+    downloadArchivePath,
+    seedPublishedDownload: (fileName) => writeFileSync(join(downloadRoot, fileName), archiveBytes),
+    expectedCandidateSha256,
+    hasPublishedDownload: (fileName) => existsSync(join(downloadRoot, fileName)),
+    publishedDownloadSha256: (fileName) => {
+      const path = join(downloadRoot, fileName);
+      return existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null;
+    },
     seedUserContent: async () => {
       await api(`/api/plugins/${encodeURIComponent("company-dev/project-delivery-hub")}/prompts`, {
         method: "POST", session: true,
@@ -167,7 +202,11 @@ export async function startTestPortal(): Promise<TestPortal> {
       const reader = spawn(process.env.PYTHON ?? "python", [
         "-m", "e2e.run_test_server", "--data-root", dataRoot,
         "--web-root", process.env.PORTAL_TEST_WEB_ROOT ?? join(repositoryRoot, "dist"),
-        "--picker-root", pickerPluginRoot, "--read-only",
+        "--picker-root", pickerPluginRoot,
+        "--archive-path", downloadArchivePath,
+        "--download-root", downloadRoot,
+        "--candidate-version", "3.7.19",
+        "--read-only",
       ], { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] });
       readers.push(reader);
       const lines = createInterface({ input: reader.stdout });
@@ -179,7 +218,37 @@ export async function startTestPortal(): Promise<TestPortal> {
       lines.close();
       return `http://127.0.0.1:${(JSON.parse(readyLine) as { port: number }).port}`;
     },
+    startRemoteManagement: async () => {
+      const proxyPort = await reserveLoopbackPort();
+      const origin = `https://127.0.0.1:${proxyPort}`;
+      const reader = spawn(process.env.PYTHON ?? "python", [
+        "-m", "e2e.run_test_server", "--data-root", dataRoot,
+        "--web-root", process.env.PORTAL_TEST_WEB_ROOT ?? join(repositoryRoot, "dist"),
+        "--picker-root", pickerPluginRoot,
+        "--archive-path", downloadArchivePath,
+        "--download-root", downloadRoot,
+        "--candidate-version", "3.7.19",
+        "--remote-management",
+        "--https-origin", origin,
+      ], { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] });
+      readers.push(reader);
+      const lines = createInterface({ input: reader.stdout });
+      const readyLine = await new Promise<string>((resolveLine, rejectLine) => {
+        const timeout = setTimeout(() => rejectLine(new Error("远程管理测试服务启动超时")), 10_000);
+        lines.once("line", (line) => { clearTimeout(timeout); resolveLine(line); });
+        reader.once("exit", (code) => {
+          clearTimeout(timeout);
+          rejectLine(new Error(`远程管理测试服务提前退出（${code ?? "unknown"}）`));
+        });
+      });
+      lines.close();
+      const backendPort = (JSON.parse(readyLine) as { port: number }).port;
+      const proxy = await startIsolatedHttpsProxy(backendPort, proxyPort);
+      proxies.push(proxy);
+      return proxy.url;
+    },
     stop: async () => {
+      for (const proxy of proxies) await proxy.stop();
       for (const reader of readers) {
         if (reader.exitCode === null) {
           const exited = new Promise<void>((resolveExit) => reader.once("exit", () => resolveExit()));
@@ -195,6 +264,26 @@ export async function startTestPortal(): Promise<TestPortal> {
       rmSync(temporaryRoot, { recursive: true, force: true });
     },
   };
+}
+
+function writePluginArchive(pluginRoot: string, archivePath: string): void {
+  const result = spawnSync(process.env.PYTHON ?? "python", [
+    "-c",
+    [
+      "import sys, zipfile",
+      "from pathlib import Path, PurePosixPath",
+      "root, output = Path(sys.argv[1]), Path(sys.argv[2])",
+      "with zipfile.ZipFile(output, 'w', zipfile.ZIP_STORED) as archive:",
+      "    for path in sorted(root.rglob('*')):",
+      "        if path.is_file():",
+      "            archive.write(path, (PurePosixPath(root.name) / path.relative_to(root).as_posix()).as_posix())",
+    ].join("\n"),
+    pluginRoot,
+    archivePath,
+  ], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`无法建立测试插件 ZIP：${result.stderr || result.stdout}`);
+  }
 }
 
 async function request<T>(

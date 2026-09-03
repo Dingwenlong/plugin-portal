@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { HubEntry } from "./HubEntry";
@@ -94,7 +94,7 @@ describe("HubEntry plugin icons", () => {
       const entry = screen.getByRole("link", { name: item.name });
       const identity = entry.querySelector(".company-dev-hub-entry-identity");
       const icon = identity?.querySelector("img");
-      expect(icon).toHaveAttribute("src", `/api/plugins/${encodeURIComponent(item.pluginKey)}/icon`);
+      expect(icon).toHaveAttribute("src", `/api/plugins/${encodeURIComponent(item.pluginKey)}/icon?revision=2`);
       expect(icon).toHaveAttribute("alt", "");
       expect(identity?.firstElementChild).toBe(icon);
       expect(identity?.lastElementChild).toHaveTextContent(item.name);
@@ -113,6 +113,58 @@ describe("HubEntry plugin icons", () => {
     expect(entry.querySelector(".portal-brand-fallback")).toHaveAttribute("aria-hidden", "true");
     expect(entry).toHaveAttribute("href", "#/plugins/yusheng-inc/overview");
     expect(screen.getByRole("link", { name: "研发助手插件" }).querySelector("img"))
-      .toHaveAttribute("src", "/api/plugins/company-dev%2Fproject-delivery-hub/icon");
+      .toHaveAttribute("src", "/api/plugins/company-dev%2Fproject-delivery-hub/icon?revision=2");
+  });
+
+  it("reloads a reused plugin icon when inclusion refreshes the catalog revision", () => {
+    const client = { selectPluginDirectory: vi.fn(), previewImport: vi.fn(), promote: vi.fn(), rollback: vi.fn() };
+    const props = {
+      client,
+      route: "hub" as const,
+      onNavigate: vi.fn(),
+      onCatalogChanged: vi.fn(),
+    };
+    const { rerender } = render(<HubEntry catalog={catalog} {...props} />);
+    const entry = screen.getByRole("link", { name: "昱胜 Inc" });
+    fireEvent.error(entry.querySelector("img")!);
+    expect(entry.querySelector("img")).toBeNull();
+
+    rerender(<HubEntry catalog={{ ...catalog, revision: 3 }} {...props} />);
+
+    expect(screen.getByRole("link", { name: "昱胜 Inc" }).querySelector("img"))
+      .toHaveAttribute("src", "/api/plugins/company-dev%2Fyusheng-inc/icon?revision=3");
+  });
+
+  it("offers local download publication, hides it in read-only mode, and restores trigger focus", async () => {
+    const publicationClient = {
+      selectPluginDirectory: vi.fn(),
+      previewImport: vi.fn(),
+      promote: vi.fn(),
+      rollback: vi.fn(),
+      selectDownloadCandidate: vi.fn().mockResolvedValue({ selected: false as const }),
+      confirmDownloadPublication: vi.fn(),
+    };
+    const { rerender } = render(<HubEntry
+      catalog={catalog}
+      client={publicationClient}
+      route="hub"
+      onNavigate={vi.fn()}
+      onCatalogChanged={vi.fn()}
+    />);
+    const trigger = screen.getByRole("button", { name: "发布 昱胜 Inc 下载" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "发布 昱胜 Inc 下载" })).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    rerender(<HubEntry
+      catalog={catalog}
+      client={publicationClient}
+      readOnly
+      route="hub"
+      onNavigate={vi.fn()}
+      onCatalogChanged={vi.fn()}
+    />);
+    expect(screen.queryByRole("button", { name: /发布 .* 下载/ })).not.toBeInTheDocument();
   });
 });

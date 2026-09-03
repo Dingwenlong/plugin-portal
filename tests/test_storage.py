@@ -83,6 +83,62 @@ class PortalStoreTests(unittest.TestCase):
         )
         self.assertEqual(stored, snapshot)
 
+    def test_snapshot_icon_round_trip_is_immutable(self) -> None:
+        snapshot_id = "a" * 64
+        self.store.put_snapshot_icon("company-dev/sample-plugin", snapshot_id, "image/png", b"png")
+
+        self.assertEqual(
+            self.store.read_snapshot_icon("company-dev/sample-plugin", snapshot_id),
+            ("image/png", b"png"),
+        )
+        self.store.put_snapshot_icon("company-dev/sample-plugin", snapshot_id, "image/png", b"png")
+        with self.assertRaises(StorageError):
+            self.store.put_snapshot_icon("company-dev/sample-plugin", snapshot_id, "image/png", b"changed")
+
+    def test_snapshot_icon_validates_identity_type_and_size(self) -> None:
+        for index, (content_type, suffix) in enumerate((
+            ("image/png", "png"),
+            ("image/jpeg", "jpg"),
+            ("image/webp", "webp"),
+        )):
+            snapshot_id = f"{index + 10:x}" * 64
+            self.store.put_snapshot_icon("company-dev/sample-plugin", snapshot_id, content_type, b"image")
+            asset = self.root / "snapshot-assets/company-dev/sample-plugin" / snapshot_id
+            self.assertTrue((asset / f"icon.{suffix}").is_file())
+
+        exact_limit = b"x" * (2 * 1024 * 1024)
+        self.store.put_snapshot_icon("company-dev/sample-plugin", "d" * 64, "image/png", exact_limit)
+        for plugin_key, snapshot_id, content_type, payload in (
+            ("bad", "e" * 64, "image/png", b"x"),
+            ("company-dev/sample-plugin", "not-a-snapshot", "image/png", b"x"),
+            ("company-dev/sample-plugin", "e" * 64, "image/gif", b"x"),
+            ("company-dev/sample-plugin", "e" * 64, "image/png", b""),
+            ("company-dev/sample-plugin", "e" * 64, "image/png", exact_limit + b"x"),
+        ):
+            with self.subTest(plugin_key=plugin_key, snapshot_id=snapshot_id, content_type=content_type):
+                with self.assertRaises(StorageError):
+                    self.store.put_snapshot_icon(plugin_key, snapshot_id, content_type, payload)
+
+    def test_snapshot_icon_write_failure_removes_atomic_staging_files(self) -> None:
+        with patch.object(self.store, "_atomic_write_json", side_effect=StorageError("failed")):
+            with self.assertRaises(StorageError):
+                self.store.put_snapshot_icon(
+                    "company-dev/sample-plugin", "f" * 64, "image/png", b"image",
+                )
+
+        asset_root = self.root / "snapshot-assets/company-dev/sample-plugin"
+        self.assertEqual(list(asset_root.rglob("*")) if asset_root.exists() else [], [])
+
+    def test_snapshot_icon_read_rejects_missing_or_tampered_metadata(self) -> None:
+        snapshot_id = "9" * 64
+        with self.assertRaises(StorageError):
+            self.store.read_snapshot_icon("company-dev/sample-plugin", snapshot_id)
+        self.store.put_snapshot_icon("company-dev/sample-plugin", snapshot_id, "image/png", b"png")
+        metadata = self.root / "snapshot-assets/company-dev/sample-plugin" / snapshot_id / "metadata.json"
+        metadata.write_text('{"contentType":"image/png","byteLength":99}', encoding="utf-8")
+        with self.assertRaises(StorageError):
+            self.store.read_snapshot_icon("company-dev/sample-plugin", snapshot_id)
+
 
 if __name__ == "__main__":
     unittest.main()

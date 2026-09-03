@@ -1,6 +1,6 @@
 # Plugin Portal
 
-面向个人本机使用的多插件只读门户。Portal 拥有固定页面与独立发布周期，人工纳入插件并生成经过校验的公开资料快照；插件不依赖 Portal，Portal 也不修改或执行插件代码。
+面向个人与可信局域网使用的多插件门户。Portal 拥有固定页面与独立发布周期，人工纳入插件并生成经过校验的公开资料快照；插件不依赖 Portal，Portal 也不修改或执行插件代码。
 
 当前 MVP 已提供固定七页、多插件目录与单插件阅读空间、只读公开快照、按插件隔离的 Prompts 与鸟瞰全景流程配置。已确认的架构见：
 
@@ -22,33 +22,43 @@ npm run build
 
 打开 [http://127.0.0.1:9137/](http://127.0.0.1:9137/)。
 
-## 局域网只读访问
+## 局域网访问模式
 
-本机管理仍只监听 9137；可以另外启动 9135，供可信局域网查看同一份已纳入插件、个人 Prompts 和流程。该入口没有登录验证，因此仅在资料所有者明确同意共享后启用，不要转发到公网。
+本机管理仍只监听 `127.0.0.1:9137`。可信局域网需要跨网段纳入插件、编辑 Prompt、配置流程或发布下载时，可以另启 9135 远程管理模式。它不提供登录验证，也不按来源 IP 做应用层授权；必须只在受控内网和防火墙边界内开放，禁止映射到公网。
+
+远程管理不接收服务器文件路径。插件纳入和下载候选均使用浏览器上传 ZIP，后端只处理当前浏览器会话上传的临时文件，并继续执行大小、ZIP 结构、版本、Plugin Release 审计和发布回读门禁。
 
 ```powershell
-# 在独立运行目录中完成构建，先检查再启动；地址填写本机局域网 IPv4。
+# 先只读确认现有 Caddy、构建和数据目录，再启动 loopback 后端。
+.\scripts\start-remote-management.ps1 -Address <本机局域网IPv4> -CheckOnly
+.\scripts\start-remote-management.ps1 -Address <本机局域网IPv4>
+
+# 等价的后端命令；生产环境仍应由脚本完成 PID、哈希和访问模式回读。
+python -m plugin_portal serve --remote-management --host 127.0.0.1 --port 9135 --https-origin https://<本机局域网IPv4>:9135 --data-root <资料目录> --web-root <构建目录>
+```
+
+- 胶囊与 Hub 的管理按钮在远程管理模式全部开放；目录选择改为浏览器文件选择，不泄露服务端路径。
+- 服务只信任精确的 HTTPS Origin 与 Host；跨 Origin 请求、转发头伪造和非预期 Host 均拒绝。
+- 启动脚本只启动它自己的 Python loopback 后端，不修改或停止 Caddy，不修改防火墙、系统服务、开机任务，也不操作 9134、9136、9137。
+- Caddy 必须继续只监听明确的内网 IPv4、关闭管理端口，并反向代理到 `127.0.0.1:9135`。若现有只读配置含以下写入阻断器，启用远程管理前只移除这两行；其余 TLS、Host 与兜底拒绝规则保留：
+
+```caddyfile
+@writes not method GET HEAD
+respond @writes 403
+```
+
+没有企业证书时可使用 Caddy 内部 CA；访问设备需人工信任公开根证书。CA 私钥只保存在受限的运行目录，不进入仓库、静态目录或共享包。生产切换必须先在非生效端口验证证书链、GET/HEAD、首页哈希、访问模式、上传及回滚路径，再按独立发布授权切换。
+
+### 可选只读模式
+
+只需分享内容时，仍可使用 `--read-only` 或 `scripts/start-lan.ps1`。该模式隐藏纳入、编辑、流程配置与发布入口，并在后端拒绝所有写请求：
+
+```powershell
 .\scripts\start-lan.ps1 -Address <本机局域网IPv4> -CheckOnly
 .\scripts\start-lan.ps1 -Address <本机局域网IPv4>
 ```
 
-- 只读入口隐藏纳入、配置流程和 Prompt 编辑按钮；服务器拒绝所有 POST、PUT、PATCH、DELETE，包括创建管理会话。
-- 仅分享已纳入插件的公开快照和对应 Prompts、流程；不会提供目录选择、文件浏览、插件源目录、未纳入资料或执行插件。
-- 下载使用同站点链接，只读取现有本机下载服务中对应插件版本的 ZIP，不接受客户端传入的地址；下载服务不可用时按钮禁用或返回错误。
-- 绑定明确的内网 IPv4 和固定 9135，不监听全部网卡。只读实例与本机 9137 进程、构建目录分别运行，互不重启；不操作 9136。
-- 启动脚本不会修改防火墙、系统服务或开机任务。启用后，局域网可见资料随本机人工保存/刷新更新。
-
-### 局域网 HTTPS
-
-局域网 HTTP 不是浏览器安全上下文，WebGPU 按钮效果会使用本地 Canvas 回退。需要原版效果时，可由 Caddy 在明确的局域网地址和 9135 端口终止 TLS，将请求转发到独立的只读后台：
-
-```powershell
-python -m plugin_portal serve --read-only --host 127.0.0.1 --port 9135 --https-origin https://<本机局域网IPv4>:9135 --data-root <资料目录> --web-root <只读构建目录>
-```
-
-`--https-origin` 只接受明确的内网 IPv4、HTTPS 和 9135。代理必须保留原始 Host 与 Origin；后台不信任客户端转发头，仍拒绝管理和写入。不要把代理指向 9137。
-
-没有企业证书时，可使用 Caddy 的内部 CA；访问设备需要人工信任其公开根证书。CA 私钥只保存在受限的本机目录，不进入仓库、静态目录或共享包。Caddy 应关闭管理端口、自动 HTTP 跳转和自动信任安装，只监听指定地址；证书续期由运行中的 Caddy 管理。配置前验证临时端口、证书链、IP 名称、GET/HEAD 哈希和只读边界，保留旧 HTTP 运行目录作为恢复来源。
+只读和远程管理是互斥的显式模式；不得同时传入 `--read-only` 与 `--remote-management`。
 
 ## 资料边界
 
@@ -77,5 +87,20 @@ python -m plugin_portal serve --read-only --host 127.0.0.1 --port 9135 --https-o
 文件中的服务 ID 必须已存在于 `.mcp.json`。Portal 只导入上述封闭字段；文件缺失或某个服务没有对应说明时，该服务继续只显示 ID。
 
 根地址保留背景与 Start 入口，进入 `/#/hub` 后可纳入、刷新或回滚插件。插件站点只显示当前插件内容，不提供插件切换或管理入口。点击“选择插件目录”会打开 Windows 目录选择窗口，并从插件清单自动识别名称、ID 与版本；发布者、规范路径和扩展工具位于可选的高级区域。所有变更仍通过同一套本机 loopback API、会话令牌与 revision 门禁完成。
+
+纳入或刷新成功后，Hub 目录会立即重读；插件图标 URL 同步绑定新的目录修订号，因此既有条目也会重新读取图标，无需手动刷新页面。
+
+## 发布下载包
+
+本机 Hub 的插件条目提供“发布下载”。它只分发现成候选，不替插件生成 ZIP：
+
+1. 先按目标插件自身的发布流程生成候选 ZIP，并保证版本与 Portal 当前活动快照一致。
+2. 点击“发布下载”并选择候选。浏览器不会取得或提交本机绝对路径。
+3. Portal 通过当前已安装且启用的 `plugin-release@company-dev` 执行只读 `diagnose`，页面仅显示封闭的摘要、大小和警告。
+4. 人工确认后，Portal 才把同一候选原子发布为 `<pluginId>-<version>-<target>.zip`，并从 9134 回读验证字节。
+
+下载目录沿用现有 `%LOCALAPPDATA%\project-delivery-hub-share\downloads`，必须事先存在并由现有 9134 服务读取；Portal 不创建、配置或重启 9134。候选上限为 128 MiB，同名公开版本绝不覆盖。确认前候选变化、Plugin Release 拒绝、写入失败或 9134 回读不一致都会停止；已激活但回读失败的新文件会被隔离，既有下载不受影响。发布回执位于 Portal 私有数据目录，不记录候选绝对路径或原始命令输出。
+
+远程管理模式通过浏览器上传同一候选 ZIP，完成 Plugin Release 审计后才能确认发布；只读模式不显示发布入口，并在读取或解析候选前拒绝写请求。
 
 封面液态玻璃效果复用了 LerSent001 orb 的 MIT 许可实现，完整许可见 [THIRD_PARTY-LICENSE-LerSent001-orb.txt](THIRD_PARTY-LICENSE-LerSent001-orb.txt)。背景使用 jcponcemath 的 “Accretion by Xor” 原作 GLSL 和固定版本 p5.js 1.11.8；背景及接入修改单独遵守 CC BY-NC-SA 3.0，保留 XorDev 署名，见 [来源与修改说明](THIRD_PARTY-NOTICE-Accretion.txt) 和 [p5.js 许可](THIRD_PARTY-LICENSE-p5.txt)。仅封面按需加载本地构建资源，不使用远端 iframe、声音模块或平台脚本。原作限非商业使用，局域网部署本身不代表满足非商业条件。

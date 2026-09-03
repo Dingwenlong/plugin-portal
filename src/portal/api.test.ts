@@ -4,9 +4,100 @@ import { PortalClient } from "./api";
 
 describe("PortalClient", () => {
   it("validates the server-owned access mode", async () => {
-    await expect(new PortalClient(async () => Response.json({ readOnly: true })).getAccessMode())
-      .resolves.toEqual({ readOnly: true });
-    await expect(new PortalClient(async () => Response.json({ readOnly: "false" })).getAccessMode()).rejects.toThrow();
+    for (const access of [
+      { readOnly: false, fileSelectionMode: "server-picker" },
+      { readOnly: false, fileSelectionMode: "browser-upload" },
+      { readOnly: true, fileSelectionMode: "none" },
+    ] as const) {
+      await expect(new PortalClient(async () => Response.json(access)).getAccessMode())
+        .resolves.toEqual(access);
+    }
+    for (const invalid of [
+      { readOnly: true },
+      { readOnly: "false", fileSelectionMode: "none" },
+      { readOnly: true, fileSelectionMode: "server-picker" },
+      { readOnly: false, fileSelectionMode: "browser-upload", host: "private" },
+    ]) {
+      await expect(new PortalClient(async () => Response.json(invalid)).getAccessMode()).rejects.toThrow();
+    }
+  });
+
+  it("uploads raw ZIP files with one shared management session", async () => {
+    const calls: Array<{ input: string; init?: RequestInit }> = [];
+    const pluginFile = new File([new Uint8Array([0x50, 0x4b])], "示例 plugin.zip", { type: "application/zip" });
+    const downloadFile = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], "release.zip", {
+      type: "application/octet-stream",
+    });
+    const pluginKey = "company-dev/sample-plugin";
+    const client = new PortalClient(async (input, init) => {
+      const path = String(input);
+      calls.push({ input: path, init });
+      if (path === "/api/session") {
+        return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      }
+      if (path === "/api/uploads/plugin-import") {
+        return Response.json({ uploadId: "plugin-upload", fileName: pluginFile.name, archiveBytes: pluginFile.size });
+      }
+      return Response.json({
+        selected: true,
+        publicationId: "publication-token",
+        preview: {
+          pluginKey,
+          version: "1.2.3",
+          fileName: downloadFile.name,
+          destinationFileName: "sample-plugin-1.2.3-company-dev.zip",
+          candidateSha256: "a".repeat(64),
+          fileSetSha256: "b".repeat(64),
+          fileCount: 3,
+          archiveBytes: downloadFile.size,
+          auditToolVersion: "1.0.2",
+          warnings: [],
+        },
+      });
+    });
+
+    await expect(client.uploadPluginArchive(pluginFile)).resolves.toEqual({
+      uploadId: "plugin-upload", fileName: pluginFile.name, archiveBytes: pluginFile.size,
+    });
+    await expect(client.uploadDownloadCandidate(pluginKey, downloadFile)).resolves.toMatchObject({
+      selected: true, publicationId: "publication-token",
+    });
+
+    expect(calls.map((call) => call.input)).toEqual([
+      "/api/session",
+      "/api/uploads/plugin-import",
+      `/api/plugins/${encodeURIComponent(pluginKey)}/download-publication/upload`,
+    ]);
+    for (const [call, file] of [[calls[1], pluginFile], [calls[2], downloadFile]] as const) {
+      expect(call.init?.method).toBe("POST");
+      expect(call.init?.body).toBe(file);
+      const headers = new Headers(call.init?.headers);
+      expect(headers.get("Content-Type")).toBe("application/zip");
+      expect(headers.get("Content-Disposition")).toBe(
+        `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      );
+      expect(headers.get("X-Portal-Session")).toBe("session-token-abcdefghijklmnopqrstuvwxyz");
+      expect(headers.has("Content-Length")).toBe(false);
+    }
+  });
+
+  it("rejects malformed upload receipts and surfaces structured upload errors", async () => {
+    const file = new File(["zip"], "sample.zip", { type: "application/zip" });
+    const malformed = new PortalClient(async (input) => {
+      if (String(input) === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      return Response.json({ uploadId: "upload", fileName: "sample.zip", archiveBytes: 3, sourcePath: "private" });
+    });
+    await expect(malformed.uploadPluginArchive(file)).rejects.toThrow("插件上传回应无效");
+
+    const rejected = new PortalClient(async (input) => {
+      if (String(input) === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      return Response.json(
+        { error: { code: "candidate_rejected", message: "候选未通过 Plugin Release 审计" } },
+        { status: 400 },
+      );
+    });
+    await expect(rejected.uploadDownloadCandidate("company-dev/sample-plugin", file))
+      .rejects.toThrow("候选未通过 Plugin Release 审计");
   });
 
   it("accepts only the requested plugin's same-origin LAN download", async () => {
@@ -203,6 +294,79 @@ describe("PortalClient", () => {
     });
 
     await expect(client.selectPluginDirectory()).rejects.toThrow("插件目录选择回应无效");
+  });
+
+  it("selects and confirms only closed download publication responses", async () => {
+    const key = "company-dev/sample-plugin";
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const client = new PortalClient(async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      if (url.endsWith("/select")) return Response.json({
+        selected: true,
+        publicationId: "publication-token",
+        preview: {
+          pluginKey: key,
+          version: "1.2.3",
+          fileName: "sample-plugin.zip",
+          destinationFileName: "sample-plugin-1.2.3-company-dev.zip",
+          candidateSha256: "a".repeat(64),
+          fileSetSha256: "b".repeat(64),
+          fileCount: 3,
+          archiveBytes: 25,
+          auditToolVersion: "1.0.1",
+          warnings: ["市场源码与候选不一致"],
+        },
+      });
+      return Response.json({
+        pluginKey: key,
+        version: "1.2.3",
+        fileName: "sample-plugin-1.2.3-company-dev.zip",
+        candidateSha256: "a".repeat(64),
+        archiveBytes: 25,
+        publishedAtUtc: "2026-08-30T00:00:00Z",
+      });
+    });
+
+    const selection = await client.selectDownloadCandidate(key);
+    expect(selection).toMatchObject({ selected: true, publicationId: "publication-token" });
+    if (!selection.selected) throw new Error("expected selection");
+    await expect(client.confirmDownloadPublication(key, selection.publicationId)).resolves.toMatchObject({
+      fileName: "sample-plugin-1.2.3-company-dev.zip",
+    });
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/session",
+      `/api/plugins/${encodeURIComponent(key)}/download-publication/select`,
+      `/api/plugins/${encodeURIComponent(key)}/download-publication/confirm`,
+    ]);
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({ publicationId: "publication-token" });
+  });
+
+  it("rejects a download publication preview that exposes an unknown field", async () => {
+    const client = new PortalClient(async (input) => {
+      if (String(input) === "/api/session") return Response.json({ token: "session-token-abcdefghijklmnopqrstuvwxyz" });
+      return Response.json({
+        selected: true,
+        publicationId: "publication-token",
+        preview: {
+          pluginKey: "company-dev/sample-plugin",
+          version: "1.2.3",
+          fileName: "sample-plugin.zip",
+          destinationFileName: "sample-plugin-1.2.3-company-dev.zip",
+          candidateSha256: "a".repeat(64),
+          fileSetSha256: "b".repeat(64),
+          fileCount: 3,
+          archiveBytes: 25,
+          auditToolVersion: "1.0.1",
+          warnings: [],
+          sourcePath: "C:\\private\\sample-plugin.zip",
+        },
+      });
+    });
+
+    await expect(client.selectDownloadCandidate("company-dev/sample-plugin"))
+      .rejects.toThrow("下载发布选择回应无效");
   });
 
   it("accepts only a closed download availability response", async () => {

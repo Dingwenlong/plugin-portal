@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import stat
 import tempfile
 import threading
 from pathlib import Path
@@ -27,6 +29,12 @@ class RevisionConflict(StorageError):
 
 _DOCUMENT_NAME = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _SNAPSHOT_ID = re.compile(r"^[0-9a-f]{64}$")
+_ICON_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+_MAX_ICON_BYTES = 2 * 1024 * 1024
 _LOCKS_GUARD = threading.Lock()
 _LOCKS: dict[str, threading.RLock] = {}
 
@@ -159,6 +167,114 @@ class PortalStore:
         if not isinstance(value, dict) or hashlib.sha256(canonical_json_bytes(value)).hexdigest() != snapshot_id:
             raise StorageError("插件快照内容与摘要不一致")
         return value
+
+    def put_snapshot_icon(
+        self,
+        plugin_key: str,
+        snapshot_id: str,
+        content_type: str,
+        payload: bytes,
+    ) -> None:
+        target, plugin_id = self._snapshot_asset_identity(plugin_key, snapshot_id)
+        if content_type not in _ICON_TYPES or not isinstance(payload, bytes) or not payload or len(payload) > _MAX_ICON_BYTES:
+            raise StorageError("插件图标资产无效")
+        extension = _ICON_TYPES[content_type]
+        metadata = {"contentType": content_type, "byteLength": len(payload)}
+        parent = self.root / "snapshot-assets" / target / plugin_id
+        destination = parent / snapshot_id
+
+        with self._lock:
+            if destination.exists():
+                if self._read_snapshot_icon_asset(destination) != (content_type, payload):
+                    raise StorageError("插件图标资产摘要冲突")
+                return
+            parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(dir=parent, prefix=f".{snapshot_id}."))
+            try:
+                self._atomic_write_bytes(staging / f"icon.{extension}", payload)
+                self._atomic_write_json(staging / "metadata.json", metadata)
+                os.rename(staging, destination)
+            except FileExistsError:
+                shutil.rmtree(staging, ignore_errors=True)
+                if self._read_snapshot_icon_asset(destination) != (content_type, payload):
+                    raise StorageError("插件图标资产摘要冲突") from None
+            except (OSError, StorageError) as error:
+                shutil.rmtree(staging, ignore_errors=True)
+                if isinstance(error, StorageError):
+                    raise
+                raise StorageError("插件图标资产写入失败") from error
+
+    def read_snapshot_icon(self, plugin_key: str, snapshot_id: str) -> tuple[str, bytes]:
+        target, plugin_id = self._snapshot_asset_identity(plugin_key, snapshot_id)
+        path = self.root / "snapshot-assets" / target / plugin_id / snapshot_id
+        with self._lock:
+            return self._read_snapshot_icon_asset(path)
+
+    @staticmethod
+    def _snapshot_asset_identity(plugin_key: str, snapshot_id: str) -> tuple[str, str]:
+        try:
+            target, plugin_id = parse_plugin_key(plugin_key)
+        except ModelValidationError:
+            raise StorageError("插件身份无效") from None
+        if not isinstance(snapshot_id, str) or not _SNAPSHOT_ID.fullmatch(snapshot_id):
+            raise StorageError("插件快照 ID 无效")
+        return target, plugin_id
+
+    def _read_snapshot_icon_asset(self, path: Path) -> tuple[str, bytes]:
+        try:
+            directory_info = os.lstat(path)
+            if not stat.S_ISDIR(directory_info.st_mode) or stat.S_ISLNK(directory_info.st_mode):
+                raise OSError
+            metadata_path = path / "metadata.json"
+            metadata_info = os.lstat(metadata_path)
+            if not stat.S_ISREG(metadata_info.st_mode) or stat.S_ISLNK(metadata_info.st_mode):
+                raise OSError
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict) or set(metadata) != {"contentType", "byteLength"}:
+                raise ValueError
+            content_type = metadata["contentType"]
+            byte_length = metadata["byteLength"]
+            if (
+                content_type not in _ICON_TYPES
+                or isinstance(byte_length, bool)
+                or not isinstance(byte_length, int)
+                or byte_length <= 0
+                or byte_length > _MAX_ICON_BYTES
+            ):
+                raise ValueError
+            icon_path = path / f"icon.{_ICON_TYPES[content_type]}"
+            if {entry.name for entry in path.iterdir()} != {"metadata.json", icon_path.name}:
+                raise ValueError
+            icon_info = os.lstat(icon_path)
+            if not stat.S_ISREG(icon_info.st_mode) or stat.S_ISLNK(icon_info.st_mode) or icon_info.st_size != byte_length:
+                raise OSError
+            payload = icon_path.read_bytes()
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
+            raise StorageError("插件图标资产不存在或已损坏") from None
+        if len(payload) != byte_length:
+            raise StorageError("插件图标资产不存在或已损坏")
+        return content_type, payload
+
+    def _atomic_write_bytes(self, path: Path, payload: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=f".{path.stem}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(payload)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, path)
+        except OSError as error:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            raise StorageError("Portal 资产写入失败") from error
 
     def _atomic_write_json(self, path: Path, value: object) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

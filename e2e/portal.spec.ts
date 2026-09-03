@@ -82,6 +82,10 @@ test.describe.serial("Plugin Portal", () => {
       "href",
       "#/plugins/project-delivery-hub/overview",
     );
+    await expect(page.getByRole("link", { name: "研发助手插件" }).locator("img")).toHaveAttribute(
+      "src",
+      "/api/plugins/company-dev%2Fproject-delivery-hub/icon?revision=1",
+    );
     await expect.poll(() => portal.listPlugins()).toMatchObject({
       revision: 1,
       items: [{ id: "project-delivery-hub", version: "3.7.19" }],
@@ -117,6 +121,40 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.locator("[data-cover-loading-overlay]")).toHaveCount(0);
     await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start" })).toBeEnabled();
+  });
+
+  test("publishes an audited candidate from the Hub without exposing its local path", async ({ page }) => {
+    const fileName = "project-delivery-hub-3.7.19-company-dev.zip";
+    const catalog = await portal.listPlugins();
+    if (!catalog.items.some((item) => item.id === "project-delivery-hub")) {
+      await portal.promote(
+        await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件"),
+        catalog.revision,
+      );
+    }
+    expect(portal.hasPublishedDownload(fileName)).toBe(false);
+    await page.goto(`${portal.baseUrl}/#/hub`);
+    await page.getByRole("button", { name: "发布 研发助手插件 下载" }).click();
+    const dialog = page.getByRole("dialog", { name: "发布 研发助手插件 下载" });
+    await expect(dialog).toBeVisible();
+
+    const selectedResponse = page.waitForResponse((response) => response.url().endsWith("/download-publication/select"));
+    await dialog.getByRole("button", { name: "选择候选 ZIP" }).click();
+    const selectedBody = await (await selectedResponse).text();
+    await expect(dialog.getByText(fileName)).toBeVisible();
+    expect(selectedBody).not.toMatch(/[A-Za-z]:\\/);
+    expect(selectedBody).not.toContain("sourcePath");
+
+    const confirmedResponse = page.waitForResponse((response) => response.url().endsWith("/download-publication/confirm"));
+    await dialog.getByRole("button", { name: "确认发布" }).click();
+    const confirmedBody = await (await confirmedResponse).text();
+    await expect(dialog.getByRole("status")).toContainText("发布成功");
+    expect(confirmedBody).not.toMatch(/[A-Za-z]:\\/);
+    expect(portal.hasPublishedDownload(fileName)).toBe(true);
+    expect(portal.publishedDownloadSha256(fileName)).toBe(portal.expectedCandidateSha256);
+
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+    await expect(page.getByRole("link", { name: "下载最新版 v3.7.19" })).toBeVisible();
   });
 
   test("previews without mutation, promotes two plugins and rolls one back", async () => {
@@ -415,6 +453,7 @@ test.describe("Capsule refinements", () => {
     portal = await startTestPortal();
     const candidate = await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件");
     await portal.promote(candidate, 0);
+    portal.seedPublishedDownload("project-delivery-hub-3.7.19-company-dev.zip");
   });
 
   test.afterAll(async () => {

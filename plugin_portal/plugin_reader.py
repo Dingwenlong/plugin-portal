@@ -22,6 +22,10 @@ class PluginReadError(RuntimeError):
     """Raised when plugin public data cannot be safely projected."""
 
 
+class PluginIconNotFound(PluginReadError):
+    """Raised when a plugin does not declare a public icon."""
+
+
 _IDENTIFIER = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _REPARSE_POINT = 0x400
 _MAX_PUBLIC_FILE_BYTES = 2 * 1024 * 1024
@@ -261,7 +265,7 @@ def read_plugin_icon(plugin_root: Path | str) -> tuple[str, bytes]:
     manifest = _read_json(root, ".codex-plugin/plugin.json")
     interface = manifest.get("interface")
     if not isinstance(interface, dict) or not isinstance(interface.get("logo"), str):
-        raise PluginReadError("插件未提供公开图标")
+        raise PluginIconNotFound("插件未提供公开图标")
     relative = _safe_relative_path(interface["logo"])
     content_type = _ICON_TYPES.get(relative.suffix.lower())
     if content_type is None:

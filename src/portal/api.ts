@@ -1,4 +1,7 @@
 import type {
+  DownloadCandidateSelection,
+  DownloadPublicationPreview,
+  DownloadPublicationReceipt,
   PluginCatalog,
   PluginDirectorySelection,
   PluginDownloadInfo,
@@ -6,6 +9,8 @@ import type {
   PluginImportConfig,
   PluginMutationReceipt,
   PluginSnapshot,
+  PluginUploadReceipt,
+  PortalAccess,
   PromptDocument,
   PromptItem,
   WorkflowDocument,
@@ -19,12 +24,17 @@ export class PortalClient {
 
   constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
 
-  async getAccessMode(): Promise<{ readOnly: boolean }> {
+  async getAccessMode(): Promise<PortalAccess> {
     const value = await this.request("/api/access");
-    if (!isClosedRecord(value, ["readOnly"]) || typeof value.readOnly !== "boolean") {
+    if (
+      !isClosedRecord(value, ["readOnly", "fileSelectionMode"])
+      || typeof value.readOnly !== "boolean"
+      || !["server-picker", "browser-upload", "none"].includes(String(value.fileSelectionMode))
+      || (value.readOnly ? value.fileSelectionMode !== "none" : value.fileSelectionMode === "none")
+    ) {
       throw new Error("无法确认访问模式");
     }
-    return { readOnly: value.readOnly };
+    return value as unknown as PortalAccess;
   }
 
   async listPlugins(): Promise<PluginCatalog> {
@@ -80,6 +90,60 @@ export class PortalClient {
       return { selected: true, path: value.path };
     }
     throw new Error("插件目录选择回应无效");
+  }
+
+  async uploadPluginArchive(file: File): Promise<PluginUploadReceipt> {
+    const value = await this.mutateBinary("/api/uploads/plugin-import", file);
+    if (
+      !isClosedRecord(value, ["uploadId", "fileName", "archiveBytes"])
+      || !isText(value.uploadId)
+      || !isText(value.fileName)
+      || !isPositiveInteger(value.archiveBytes)
+    ) {
+      throw new Error("插件上传回应无效");
+    }
+    return value as unknown as PluginUploadReceipt;
+  }
+
+  async selectDownloadCandidate(pluginKey: string): Promise<DownloadCandidateSelection> {
+    const value = await this.mutate(this.pluginUrl(pluginKey, "download-publication/select"), {});
+    if (isDownloadCandidateSelection(value, pluginKey)) return value;
+    throw new Error("下载发布选择回应无效");
+  }
+
+  async uploadDownloadCandidate(pluginKey: string, file: File): Promise<DownloadCandidateSelection> {
+    const value = await this.mutateBinary(
+      this.pluginUrl(pluginKey, "download-publication/upload"),
+      file,
+    );
+    if (isDownloadCandidateSelection(value, pluginKey) && value.selected) return value;
+    throw new Error("下载发布选择回应无效");
+  }
+
+  async confirmDownloadPublication(
+    pluginKey: string,
+    publicationId: string,
+  ): Promise<DownloadPublicationReceipt> {
+    const value = await this.mutate(this.pluginUrl(pluginKey, "download-publication/confirm"), {
+      publicationId,
+    });
+    if (
+      !isClosedRecord(value, [
+        "pluginKey",
+        "version",
+        "fileName",
+        "candidateSha256",
+        "archiveBytes",
+        "publishedAtUtc",
+      ]) ||
+      value.pluginKey !== pluginKey ||
+      ![value.version, value.fileName, value.publishedAtUtc].every(isText) ||
+      !isSha256(value.candidateSha256) ||
+      !isPositiveInteger(value.archiveBytes)
+    ) {
+      throw new Error("下载发布确认回应无效");
+    }
+    return value as unknown as DownloadPublicationReceipt;
   }
 
   async promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt> {
@@ -146,6 +210,19 @@ export class PortalClient {
     });
   }
 
+  private async mutateBinary(path: string, file: File): Promise<unknown> {
+    const token = await this.getSessionToken();
+    return this.request(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        "X-Portal-Session": token,
+      },
+      body: file,
+    });
+  }
+
   private async getSessionToken(): Promise<string> {
     if (this.sessionToken) return this.sessionToken;
     const value = await this.request("/api/session", {
@@ -205,6 +282,49 @@ function isPluginCatalog(value: unknown): value is PluginCatalog {
         isClosedRecord(item, ["pluginKey", "id", "name", "version", "summary"]) &&
         [item.pluginKey, item.id, item.name, item.version, item.summary].every(isText),
     )
+  );
+}
+
+function isDownloadPublicationPreview(
+  value: unknown,
+  pluginKey: string,
+): value is DownloadPublicationPreview {
+  return (
+    isClosedRecord(value, [
+      "pluginKey",
+      "version",
+      "fileName",
+      "destinationFileName",
+      "candidateSha256",
+      "fileSetSha256",
+      "fileCount",
+      "archiveBytes",
+      "auditToolVersion",
+      "warnings",
+    ]) &&
+    value.pluginKey === pluginKey &&
+    [value.version, value.fileName, value.destinationFileName, value.auditToolVersion].every(isText) &&
+    String(value.fileName).toLowerCase().endsWith(".zip") &&
+    String(value.destinationFileName).toLowerCase().endsWith(".zip") &&
+    isSha256(value.candidateSha256) &&
+    isSha256(value.fileSetSha256) &&
+    isNonNegativeInteger(value.fileCount) &&
+    isPositiveInteger(value.archiveBytes) &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every(isText)
+  );
+}
+
+function isDownloadCandidateSelection(
+  value: unknown,
+  pluginKey: string,
+): value is DownloadCandidateSelection {
+  if (isClosedRecord(value, ["selected"]) && value.selected === false) return true;
+  return (
+    isClosedRecord(value, ["selected", "publicationId", "preview"])
+    && value.selected === true
+    && isText(value.publicationId)
+    && isDownloadPublicationPreview(value.preview, pluginKey)
   );
 }
 
@@ -324,6 +444,18 @@ function isClosedRecord(value: unknown, fields: string[]): value is Record<strin
 
 function isRevision(value: unknown): value is number {
   return Number.isInteger(value) && typeof value === "number" && value >= 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value > 0;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
 function isText(value: unknown): value is string {

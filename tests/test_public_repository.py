@@ -46,6 +46,25 @@ class PublicRepositoryTests(unittest.TestCase):
         self.assertIn("人工纳入", readme)
         self.assertNotIn("当前仓库处于设计阶段", readme)
 
+    def test_remote_management_contract_is_documented_without_weakening_the_boundary(self) -> None:
+        start = ROOT / "scripts" / "start-remote-management.ps1"
+        self.assertTrue(start.is_file())
+        script = start.read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("--remote-management", script)
+        self.assertIn("--https-origin", script)
+        self.assertIn("Start-Process", script)
+        self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn('"browser-upload"', script)
+        self.assertNotIn("Stop-Process -Name caddy", script)
+        self.assertIn("不提供登录验证", readme)
+        self.assertIn("浏览器上传 ZIP", readme)
+        self.assertIn("--remote-management", readme)
+        self.assertIn("@writes not method GET HEAD", readme)
+        self.assertIn("respond @writes 403", readme)
+        self.assertNotIn("局域网 9135 始终不显示发布入口", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

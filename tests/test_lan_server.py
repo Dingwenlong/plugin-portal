@@ -6,7 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import quote
 
 from plugin_portal.api import PortalApi
@@ -28,7 +28,8 @@ class LanServerTests(unittest.TestCase):
         shutil.copytree(Path(__file__).parent / "fixtures/plugins/minimal", source)
         token = api.create_session()["token"]
         candidate = api.preview_import(token, {
-            "pluginRoot": str(source), "target": "company-dev", "expectedPluginId": "sample-plugin",
+            "source": {"kind": "server-directory", "path": str(source)},
+            "target": "company-dev", "expectedPluginId": "sample-plugin",
             "approvedRulePaths": ["rules/public.md"], "extensionTools": [],
         })
         self.key = candidate["pluginKey"]
@@ -61,7 +62,10 @@ class LanServerTests(unittest.TestCase):
 
     def test_reads_public_content_and_consented_personal_content_without_writes(self):
         before = self.hashes()
-        self.assertEqual(json.loads(self.request("/api/access")[2]), {"readOnly": True})
+        self.assertEqual(
+            json.loads(self.request("/api/access")[2]),
+            {"readOnly": True, "fileSelectionMode": "none"},
+        )
         for path in ("/api/plugins", self.path + "/snapshot", self.path + "/prompts", self.path + "/workflows"):
             with self.subTest(path=path):
                 status, headers, body = self.request(path)
@@ -76,15 +80,24 @@ class LanServerTests(unittest.TestCase):
     def test_denies_all_writes_before_session_or_picker_execution(self):
         before = self.hashes()
         token = self.server.api.create_session()["token"]
+        archive_picker = Mock(side_effect=AssertionError("archive picker called"))
+        publisher = Mock()
+        self.server.api.archive_picker = archive_picker
+        self.server.api.download_publisher = publisher
         with patch.object(self.server.api, "directory_picker", side_effect=AssertionError("picker called")):
             for method in ("POST", "PUT", "PATCH", "DELETE"):
                 for path in ("/api/session", "/api/plugins/import/preview", "/api/plugins/import/select-directory",
                              self.path + "/promote", self.path + "/rollback",
+                             self.path + "/download-publication/select",
+                             self.path + "/download-publication/confirm",
                              self.path + "/prompts", self.path + "/workflows"):
                     with self.subTest(method=method, path=path):
-                        status, _, body = self.request(path, method, {"X-Portal-Session": token}, b"{}")
+                        status, _, body = self.request(path, method, {"X-Portal-Session": token}, b"not-json")
                         self.assertEqual(status, 403)
                         self.assertEqual(json.loads(body)["error"]["code"], "read_only")
+        archive_picker.assert_not_called()
+        publisher.preview.assert_not_called()
+        publisher.publish.assert_not_called()
         self.assertEqual(len(self.server.api._sessions), 1)
         self.assertEqual(self.hashes(), before)
 

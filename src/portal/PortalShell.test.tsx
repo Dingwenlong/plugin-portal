@@ -21,7 +21,7 @@ function createClient(): PortalDataClient {
     },
   ];
   return {
-    getAccessMode: async () => ({ readOnly: false }),
+    getAccessMode: async () => ({ readOnly: false, fileSelectionMode: "server-picker" }),
     listPlugins: async () => ({ revision: 2, items: plugins }),
     getSnapshot: async (pluginKey) => ({
       schemaVersion: "1.0.0",
@@ -65,6 +65,10 @@ function createClient(): PortalDataClient {
     getWorkflows: async (pluginKey) => ({ revision: 0, pluginKey, tabs: [] }),
     saveWorkflows: async (_pluginKey, _revision, workflow) => ({ revision: 1, ...workflow }),
     selectPluginDirectory: async () => ({ selected: false }),
+    uploadPluginArchive: async () => { throw new Error("not used"); },
+    selectDownloadCandidate: async () => ({ selected: false }),
+    uploadDownloadCandidate: async () => { throw new Error("not used"); },
+    confirmDownloadPublication: async () => { throw new Error("not used"); },
     previewImport: async () => { throw new Error("not used"); },
     promote: async () => { throw new Error("not used"); },
     rollback: async () => { throw new Error("not used"); },
@@ -111,7 +115,7 @@ describe("PortalShell", () => {
   it("restores the shared theme on Hub and keeps it available in read-only mode", async () => {
     window.localStorage.setItem("plugin-portal.theme", "light");
     const client = createClient();
-    client.getAccessMode = async () => ({ readOnly: true });
+    client.getAccessMode = async () => ({ readOnly: true, fileSelectionMode: "none" });
     const { rerender } = render(<PortalShell client={client} initialHash="#/hub" />);
     const toggle = await screen.findByRole("button", { name: "切换为深色" });
     expect(screen.queryByRole("button", { name: "纳入插件" })).not.toBeInTheDocument();
@@ -162,7 +166,7 @@ describe("PortalShell", () => {
   it.each(["#/hub", "#/plugins/project-delivery-hub/overview", "#/plugins/project-delivery-hub/prompts"])(
     "keeps LAN content readable without management controls at %s", async (initialHash) => {
       const client = createClient();
-      client.getAccessMode = async () => ({ readOnly: true });
+      client.getAccessMode = async () => ({ readOnly: true, fileSelectionMode: "none" });
       render(<PortalShell client={client} initialHash={initialHash} />);
       if (initialHash.endsWith("prompts")) {
         expect(await screen.findByText("研发 Prompt")).toBeInTheDocument();
@@ -226,6 +230,55 @@ describe("PortalShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument();
+  });
+
+  it("passes remote browser-upload capability to Hub management without hiding actions", async () => {
+    const client = createClient();
+    client.getAccessMode = async () => ({ readOnly: false, fileSelectionMode: "browser-upload" });
+    render(<PortalShell client={client} initialHash="#/hub" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "纳入插件" }));
+    expect(screen.getByLabelText("插件 ZIP")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "选择插件目录" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /发布 .* 下载/ })).not.toHaveLength(0);
+  });
+
+  it("refreshes the Hub catalog revision and plugin icon after remote inclusion", async () => {
+    const client = createClient();
+    const initial = await client.listPlugins();
+    client.getAccessMode = async () => ({ readOnly: false, fileSelectionMode: "browser-upload" });
+    client.listPlugins = vi.fn()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce({ ...initial, revision: initial.revision + 1 });
+    client.uploadPluginArchive = vi.fn().mockResolvedValue({
+      uploadId: "upload-one", fileName: "plugin.zip", archiveBytes: 3,
+    });
+    client.previewImport = vi.fn().mockResolvedValue({
+      candidateId: "candidate-one",
+      pluginKey: initial.items[0].pluginKey,
+      snapshot: await client.getSnapshot(initial.items[0].pluginKey),
+    });
+    client.promote = vi.fn().mockResolvedValue({
+      revision: initial.revision + 1,
+      pluginKey: initial.items[0].pluginKey,
+      snapshotId: "c".repeat(64),
+    });
+    render(<PortalShell client={client} initialHash="#/hub" />);
+
+    const entry = await screen.findByRole("link", { name: initial.items[0].name });
+    expect(entry.querySelector("img")).toHaveAttribute(
+      "src", `/api/plugins/${encodeURIComponent(initial.items[0].pluginKey)}/icon?revision=${initial.revision}`,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "纳入插件" }));
+    fireEvent.change(screen.getByLabelText("插件 ZIP"), {
+      target: { files: [new File(["zip"], "plugin.zip", { type: "application/zip" })] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "确认纳入" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument());
+    expect(screen.getByRole("link", { name: initial.items[0].name }).querySelector("img")).toHaveAttribute(
+      "src", `/api/plugins/${encodeURIComponent(initial.items[0].pluginKey)}/icon?revision=${initial.revision + 1}`,
+    );
   });
 
   it("turns each plugin page into a single-plugin site without management or switching", async () => {

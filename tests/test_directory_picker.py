@@ -33,6 +33,30 @@ class DirectoryPickerTests(unittest.TestCase):
             self.picker_module().choose_plugin_directory(runner=runner)
         self.assertNotIn("private path", str(error.exception))
 
+    def test_returns_a_selected_plugin_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            selected = Path(temporary_directory) / "sample-plugin.zip"
+            selected.write_bytes(b"PK\x05\x06" + b"\0" * 18)
+            runner = lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, f"{selected}\n", "")
+
+            self.assertEqual(self.picker_module().choose_plugin_archive(runner=runner), selected)
+
+    def test_archive_cancel_returns_none(self) -> None:
+        runner = lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "\n", "")
+
+        self.assertIsNone(self.picker_module().choose_plugin_archive(runner=runner))
+
+    def test_archive_picker_rejects_non_zip_without_exposing_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            selected = Path(temporary_directory) / "private.txt"
+            selected.write_text("private", encoding="utf-8")
+            runner = lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, f"{selected}\n", "secret stderr")
+
+            with self.assertRaisesRegex(RuntimeError, "选择的插件 ZIP 无效") as error:
+                self.picker_module().choose_plugin_archive(runner=runner)
+            self.assertNotIn(str(selected), str(error.exception))
+            self.assertNotIn("secret stderr", str(error.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

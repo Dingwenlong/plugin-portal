@@ -471,16 +471,21 @@ test(`refracts actual high contrast content without warping the foreground in ${
     const bounds = link.getBoundingClientRect();
     return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
   }));
-  const foreground = await page.locator(".portal-capsule nav").screenshot();
+  const navigation = page.locator(".portal-capsule nav");
   const refractedPath = testInfo.outputPath("refracted.png");
   const refracted = await capsule.screenshot({ path: refractedPath });
+  await navigation.evaluate((node) => { (node as HTMLElement).style.background = "#ff00ff"; });
+  const foreground = await navigation.screenshot();
+  await navigation.evaluate((node) => { (node as HTMLElement).style.removeProperty("background"); });
   await refraction.evaluate((node) => {
     (node as HTMLElement).style.backdropFilter = "none";
     (node as HTMLElement).style.webkitBackdropFilter = "none";
   });
   const plainPath = testInfo.outputPath("unfiltered-control.png");
   const plain = await capsule.screenshot({ path: plainPath });
-  const foregroundPlain = await page.locator(".portal-capsule nav").screenshot();
+  await navigation.evaluate((node) => { (node as HTMLElement).style.background = "#ff00ff"; });
+  const foregroundPlain = await navigation.screenshot();
+  await navigation.evaluate((node) => { (node as HTMLElement).style.removeProperty("background"); });
   const linkGeometryAfter = await page.locator(".portal-capsule nav a").evaluateAll((links) => links.map((link) => {
     const bounds = link.getBoundingClientRect();
     return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };

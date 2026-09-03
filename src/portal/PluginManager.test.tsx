@@ -50,7 +50,7 @@ describe("PluginManager", () => {
     expect(screen.getByText("project-delivery-hub · v3.7.18")).toBeInTheDocument();
     expect(selectPluginDirectory).toHaveBeenCalledTimes(1);
     expect(previewImport).toHaveBeenCalledWith({
-      pluginRoot: "fixtures/project-delivery-hub",
+      source: { kind: "server-directory", path: "fixtures/project-delivery-hub" },
       target: "company-dev",
       expectedPluginId: "",
       approvedRulePaths: [],
@@ -98,5 +98,53 @@ describe("PluginManager", () => {
     await waitFor(() => expect(selectPluginDirectory).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("插件目录")).toHaveValue("");
     expect(previewImport).not.toHaveBeenCalled();
+  });
+
+  it("uploads a browser ZIP in remote mode and refreshes after confirmation", async () => {
+    const file = new File(["zip"], "project-delivery-hub.zip", { type: "application/zip" });
+    const uploadPluginArchive = vi.fn().mockResolvedValue({
+      uploadId: "upload-one", fileName: file.name, archiveBytes: file.size,
+    });
+    const previewImport = vi.fn().mockResolvedValue(candidate);
+    const promote = vi.fn().mockResolvedValue({
+      revision: 3, pluginKey: candidate.pluginKey, snapshotId: "c".repeat(64),
+    });
+    const onChanged = vi.fn().mockResolvedValue(undefined);
+    const selectPluginDirectory = vi.fn();
+    render(<PluginManager
+      catalogRevision={2}
+      client={{ selectPluginDirectory, uploadPluginArchive, previewImport, promote, rollback: vi.fn() }}
+      fileSelectionMode="browser-upload"
+      onChanged={onChanged}
+    />);
+
+    expect(screen.queryByRole("button", { name: "选择插件目录" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("插件 ZIP"), { target: { files: [file] } });
+
+    await waitFor(() => expect(uploadPluginArchive).toHaveBeenCalledWith(file));
+    expect(previewImport).toHaveBeenCalledWith({
+      source: { kind: "upload", uploadId: "upload-one" },
+      target: "company-dev",
+      expectedPluginId: "",
+      approvedRulePaths: [],
+      extensionTools: [],
+    });
+    expect(selectPluginDirectory).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "确认纳入" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith("project-delivery-hub"));
+  });
+
+  it("renders no file source control when management selection is unavailable", () => {
+    render(<PluginManager
+      catalogRevision={0}
+      client={{
+        selectPluginDirectory: vi.fn(), uploadPluginArchive: vi.fn(), previewImport: vi.fn(),
+        promote: vi.fn(), rollback: vi.fn(),
+      }}
+      fileSelectionMode="none"
+      onChanged={vi.fn()}
+    />);
+    expect(screen.queryByLabelText("插件目录")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("插件 ZIP")).not.toBeInTheDocument();
   });
 });

@@ -35,13 +35,14 @@ class PortalServerTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=5)
 
-    def request(self, path: str, *, method: str = "GET", body: dict | None = None, headers: dict | None = None):
-        payload = None if body is None else json.dumps(body).encode("utf-8")
+    def request(self, path: str, *, method: str = "GET", body: dict | bytes | None = None, headers: dict | None = None):
+        payload = body if isinstance(body, bytes) else None if body is None else json.dumps(body).encode("utf-8")
+        default_headers = {} if isinstance(body, bytes) else {"Content-Type": "application/json"}
         request = Request(
             f"{self.base_url}{path}",
             data=payload,
             method=method,
-            headers={"Content-Type": "application/json", **(headers or {})},
+            headers={**default_headers, **(headers or {})},
         )
         return urlopen(request, timeout=5)
 
@@ -71,6 +72,32 @@ class PortalServerTests(unittest.TestCase):
             payload = json.load(response)
             self.assertRegex(payload["token"], r"^[A-Za-z0-9_-]{32,}$")
             self.assertIsNone(response.headers.get("Set-Cookie"))
+
+    def test_reports_local_server_picker_access_mode(self) -> None:
+        with self.request("/api/access") as response:
+            self.assertEqual(
+                json.load(response),
+                {"readOnly": False, "fileSelectionMode": "server-picker"},
+            )
+
+    def test_local_management_does_not_expose_the_browser_upload_route(self) -> None:
+        token = self.server.api.create_session()["token"]
+        for path in (
+            "/api/uploads/plugin-import",
+            "/api/plugins/company-dev%2Fsample-plugin/download-publication/upload",
+        ):
+            with self.subTest(path=path), self.assertRaises(HTTPError) as unavailable:
+                self.request(
+                    path,
+                    method="POST",
+                    body=b"PK\x03\x04data",
+                    headers={
+                        "Content-Type": "application/zip",
+                        "Content-Disposition": 'attachment; filename="plugin.zip"',
+                        "X-Portal-Session": token,
+                    },
+                )
+            self.assertEqual(unavailable.exception.code, 404)
 
     def test_selects_plugin_directory_without_mutating_the_catalog(self) -> None:
         selected_root = self.root / "selected-plugin"
@@ -103,6 +130,59 @@ class PortalServerTests(unittest.TestCase):
                 headers={"X-Portal-Session": "invalid"},
             )
         self.assertEqual(invalid_session.exception.code, 401)
+
+    def test_routes_download_publication_selection_and_confirmation(self) -> None:
+        source = Path(__file__).parent / "fixtures" / "plugins" / "minimal"
+        archive = self.root / "sample-plugin.zip"
+        archive.write_bytes(b"candidate")
+
+        class Candidate:
+            plugin_key = "company-dev/sample-plugin"
+
+            @staticmethod
+            def public_preview():
+                return {"pluginKey": Candidate.plugin_key, "version": "1.2.3", "fileName": archive.name}
+
+        class Receipt:
+            @staticmethod
+            def public_result():
+                return {"pluginKey": Candidate.plugin_key, "version": "1.2.3", "fileName": "sample-plugin-1.2.3-company-dev.zip"}
+
+        class Publisher:
+            @staticmethod
+            def preview(_path, *, plugin_key, expected_version):
+                self.assertEqual((plugin_key, expected_version), (Candidate.plugin_key, "1.2.3"))
+                return Candidate()
+
+            @staticmethod
+            def publish(_candidate):
+                return Receipt()
+
+        self.server.api.archive_picker = lambda: archive
+        self.server.api.download_publisher = Publisher()
+        token = self.server.api.create_session()["token"]
+        imported = self.server.api.preview_import(token, {
+            "source": {"kind": "server-directory", "path": str(source)},
+            "target": "company-dev", "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"], "extensionTools": [],
+        })
+        self.server.api.promote(token, Candidate.plugin_key, {
+            "candidateId": imported["candidateId"], "expectedRevision": 0,
+        })
+        encoded_key = "company-dev%2Fsample-plugin"
+        headers = {"X-Portal-Session": token}
+
+        with self.request(
+            f"/api/plugins/{encoded_key}/download-publication/select",
+            method="POST", body={}, headers=headers,
+        ) as response:
+            selected = json.load(response)
+        self.assertTrue(selected["selected"])
+        with self.request(
+            f"/api/plugins/{encoded_key}/download-publication/confirm",
+            method="POST", body={"publicationId": selected["publicationId"]}, headers=headers,
+        ) as response:
+            self.assertEqual(json.load(response)["fileName"], "sample-plugin-1.2.3-company-dev.zip")
 
     def test_rejects_cross_origin_and_directory_traversal(self) -> None:
         with self.assertRaises(HTTPError) as cross_origin:
@@ -186,7 +266,7 @@ class PortalServerTests(unittest.TestCase):
         candidate = self.server.api.preview_import(
             token,
             {
-                "pluginRoot": str(source),
+                "source": {"kind": "server-directory", "path": str(source)},
                 "target": "company-dev",
                 "expectedPluginId": "sample-plugin",
                 "approvedRulePaths": ["rules/public.md"],
@@ -212,6 +292,33 @@ class PortalServerTests(unittest.TestCase):
                     "href": "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
                 },
             )
+
+    def test_serves_the_snapshot_icon_without_an_installed_plugin_cache(self) -> None:
+        source = self.root / "uploaded-plugin"
+        shutil.copytree(Path(__file__).parent / "fixtures" / "plugins" / "minimal", source)
+        icon_payload = b"\x89PNG\r\n\x1a\nuploaded"
+        (source / "assets").mkdir()
+        (source / "assets" / "logo.png").write_bytes(icon_payload)
+        manifest_path = source / ".codex-plugin" / "plugin.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["interface"]["logo"] = "./assets/logo.png"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        self.server.api.plugin_cache_root = self.root / "missing-cache"
+        token = self.server.api.create_session()["token"]
+        candidate = self.server.api.preview_import(token, {
+            "source": {"kind": "server-directory", "path": str(source)},
+            "target": "company-dev",
+            "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"],
+            "extensionTools": [],
+        })
+        self.server.api.promote(token, "company-dev/sample-plugin", {
+            "candidateId": candidate["candidateId"], "expectedRevision": 0,
+        })
+
+        with self.request("/api/plugins/company-dev%2Fsample-plugin/icon") as response:
+            self.assertEqual(response.headers.get_content_type(), "image/png")
+            self.assertEqual(response.read(), icon_payload)
 
 
 if __name__ == "__main__":

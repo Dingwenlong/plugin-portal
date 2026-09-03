@@ -19,6 +19,7 @@ test("LAN exposes approved content but no inclusion, workflow or Prompt writes",
   await page.goto(baseUrl + "/#/hub");
   await expect(page.getByRole("link", { name: "研发助手插件" })).toBeVisible();
   await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /发布 .* 下载/ })).toHaveCount(0);
   await page.getByRole("link", { name: "研发助手插件" }).click();
   await expect(page.getByRole("heading", { name: "首次安装" })).toBeVisible();
   await expect(page.getByRole("button", { name: "配置流程" })).toHaveCount(0);
@@ -35,6 +36,10 @@ test("LAN exposes approved content but no inclusion, workflow or Prompt writes",
   const prefix = baseUrl + "/api/plugins/company-dev%2Fproject-delivery-hub";
   const before = await (await request.get(prefix + "/prompts")).body();
   for (const path of ["/api/session", "/api/plugins/import/preview", "/api/plugins/import/select-directory",
+    "/api/uploads/plugin-import",
+    "/api/plugins/company-dev%2Fproject-delivery-hub/download-publication/upload",
+    "/api/plugins/company-dev%2Fproject-delivery-hub/download-publication/select",
+    "/api/plugins/company-dev%2Fproject-delivery-hub/download-publication/confirm",
     "/api/plugins/company-dev%2Fproject-delivery-hub/prompts", "/api/plugins/company-dev%2Fproject-delivery-hub/workflows"]) {
     expect((await request.post(baseUrl + path, { data: {} })).status()).toBe(403);
   }

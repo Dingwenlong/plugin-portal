@@ -11,6 +11,13 @@ export interface PluginCatalog {
   items: PluginListItem[];
 }
 
+export type FileSelectionMode = "server-picker" | "browser-upload" | "none";
+
+export interface PortalAccess {
+  readOnly: boolean;
+  fileSelectionMode: FileSelectionMode;
+}
+
 export interface PluginDownloadInfo {
   available: boolean;
   version: string;
@@ -108,12 +115,22 @@ export interface WorkflowDocument extends WorkflowValue {
   revision: number;
 }
 
+export type PluginImportSource =
+  | { kind: "server-directory"; path: string }
+  | { kind: "upload"; uploadId: string };
+
 export interface PluginImportConfig {
-  pluginRoot: string;
+  source: PluginImportSource;
   target: string;
   expectedPluginId: string;
   approvedRulePaths: string[];
   extensionTools: ExtensionTool[];
+}
+
+export interface PluginUploadReceipt {
+  uploadId: string;
+  fileName: string;
+  archiveBytes: number;
 }
 
 export type PluginDirectorySelection =
@@ -130,4 +147,34 @@ export interface PluginMutationReceipt {
   revision: number;
   pluginKey: string;
   snapshotId: string;
+}
+
+export interface DownloadPublicationPreview {
+  pluginKey: string;
+  version: string;
+  fileName: string;
+  destinationFileName: string;
+  candidateSha256: string;
+  fileSetSha256: string;
+  fileCount: number;
+  archiveBytes: number;
+  auditToolVersion: string;
+  warnings: string[];
+}
+
+export type DownloadCandidateSelection =
+  | { selected: false }
+  | {
+      selected: true;
+      publicationId: string;
+      preview: DownloadPublicationPreview;
+    };
+
+export interface DownloadPublicationReceipt {
+  pluginKey: string;
+  version: string;
+  fileName: string;
+  candidateSha256: string;
+  archiveBytes: number;
+  publishedAtUtc: string;
 }

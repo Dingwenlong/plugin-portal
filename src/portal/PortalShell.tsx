@@ -17,6 +17,7 @@ import {
 
 import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
+import type { DownloadPublicationClient } from "./DownloadPublisher";
 import { PortalModal } from "./PortalModal";
 import { PortalPageAction, PortalPageActionTargetProvider } from "./PortalPageAction";
 import { PluginBrandIcon } from "./PluginBrandIcon";
@@ -31,6 +32,7 @@ import type {
   PluginDownloadInfo,
   PluginMutationReceipt,
   PluginSnapshot,
+  PortalAccess,
   PromptDocument,
   PromptItem,
   WorkflowDocument,
@@ -47,8 +49,8 @@ import {
 } from "./views/PortalViews";
 import { WorkflowEditor } from "./workflows/WorkflowEditor";
 
-export interface PortalDataClient extends PluginManagementClient {
-  getAccessMode(): Promise<{ readOnly: boolean }>;
+export interface PortalDataClient extends PluginManagementClient, DownloadPublicationClient {
+  getAccessMode(): Promise<PortalAccess>;
   listPlugins(): Promise<PluginCatalog>;
   getSnapshot(pluginKey: string): Promise<PluginSnapshot>;
   getDownloadInfo(pluginKey: string): Promise<PluginDownloadInfo>;
@@ -110,7 +112,7 @@ function PortalShellContent({
   const [selectedPluginId, setSelectedPluginId] = useState("");
   const [data, setData] = useState<Record<string, LoadedPluginData>>({});
   const [loading, setLoading] = useState(true);
-  const [readOnly, setReadOnly] = useState(true);
+  const [access, setAccess] = useState<PortalAccess>({ readOnly: true, fileSelectionMode: "none" });
   const [error, setError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState(false);
   const [pageActionTarget, setPageActionTarget] = useState<HTMLDivElement | null>(null);
@@ -129,6 +131,7 @@ function PortalShellContent({
   const scrollFrameRef = useRef<number | null>(null);
   const keyboardInputRef = useRef(false);
   const workflowTriggerRef = useRef<HTMLButtonElement>(null);
+  const readOnly = access.readOnly;
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
   const sourceHash = initialHash ?? browserHash;
@@ -254,7 +257,7 @@ function PortalShellContent({
     let active = true;
     Promise.all([resolvedClient.getAccessMode(), resolvedClient.listPlugins()]).then(([access, nextCatalog]) => {
       if (!active) return;
-      setReadOnly(access.readOnly);
+      setAccess(access);
       setCatalog(nextCatalog);
       const sourceHash = initialHash ?? window.location.hash;
       const nextRoute = parsePortalRoute(sourceHash, nextCatalog.items.map((item) => item.id));
@@ -334,11 +337,18 @@ function PortalShellContent({
   };
 
   if (hubRoute) return <HubEntry
-    readOnly={readOnly}
+    access={access}
     catalog={catalog}
     client={resolvedClient}
     route={hubRoute}
     onCatalogChanged={refreshHubCatalog}
+    onDownloadPublished={async (pluginKey) => {
+      const download = await resolvedClient.getDownloadInfo(pluginKey);
+      setData((current) => current[pluginKey] ? {
+        ...current,
+        [pluginKey]: { ...current[pluginKey], download },
+      } : current);
+    }}
     onNavigate={(next) => {
       if (initialHash !== undefined) return;
       const nextHash = next === "hub" ? "#/hub" : "#/";
@@ -369,7 +379,7 @@ function PortalShellContent({
         >
           <GlassSurface />
           <a aria-label={selectedPlugin.name} className="portal-brand" href={portalHref(selectedPlugin.id, "overview")}>
-            <PluginBrandIcon pluginKey={selectedPlugin.pluginKey} />
+            <PluginBrandIcon pluginKey={selectedPlugin.pluginKey} revision={catalog.revision} />
             <span>{selectedPlugin.name}</span>
           </a>
           <div aria-hidden="true" className="portal-capsule-current">
