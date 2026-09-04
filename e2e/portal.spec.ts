@@ -255,7 +255,7 @@ test.describe.serial("Plugin Portal", () => {
     expect(workflowActionBox!.y).toBeLessThan(100);
 
     const workflowTabs = page.getByRole("tablist", { name: "流程" });
-    await expect(workflowTabs).toHaveCSS("border-top-style", "solid");
+    await expect(workflowTabs).toHaveCSS("border-top-style", "none");
     const selectedWorkflowTab = workflowTabs.getByRole("tab", { name: "插件安装" });
     await expect(selectedWorkflowTab).toHaveCSS("border-top-width", "0px");
     await expect(selectedWorkflowTab).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -665,5 +665,32 @@ test.describe("Capsule refinements", () => {
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
       await expect(capsule).toHaveAttribute("data-visibility", "visible");
     });
+  }
+});
+
+test("reopens a re-included plugin without a manual page refresh", async ({ page }) => {
+  const portal = await startTestPortal();
+  try {
+    await installMockWebGpu(page);
+    const candidate = await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件");
+    await portal.promote(candidate, 0);
+    await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+    await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
+    await page.evaluate(() => Object.assign(window, { portalNavigationMarker: "same-document" }));
+
+    await page.evaluate(() => { window.location.hash = "#/hub"; });
+    await page.getByRole("button", { name: "纳入插件" }).click();
+    await page.getByRole("button", { name: "选择插件目录" }).click();
+    await expect(page.getByText("将纳入 研发助手插件 v3.7.19")).toBeVisible();
+    await page.getByRole("button", { name: "确认纳入" }).click();
+    await expect(page.getByRole("dialog", { name: "纳入插件" })).toHaveCount(0);
+
+    await page.getByRole("link", { name: "研发助手插件" }).click();
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+    await expect(page.getByText("正在读取公开资料…")).toHaveCount(0);
+    await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { portalNavigationMarker?: string }).portalNavigationMarker)).toBe("same-document");
+  } finally {
+    await portal.stop();
   }
 });

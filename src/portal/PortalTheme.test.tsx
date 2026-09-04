@@ -11,7 +11,9 @@ describe("PortalThemeProvider", () => {
     render(<PortalThemeProvider><ThemeToggle /></PortalThemeProvider>);
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "dark");
     const toggle = screen.getByRole("button", { name: "切换为浅色" });
-    expect(toggle).toHaveTextContent("浅色");
+    expect(toggle).not.toHaveTextContent("浅色");
+    expect(toggle.querySelector("svg")).not.toBeNull();
+    expect(toggle).not.toHaveAttribute("title");
     fireEvent.click(toggle);
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
   });

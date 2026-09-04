@@ -26,6 +26,26 @@ class DirectoryPickerTests(unittest.TestCase):
 
         self.assertIsNone(self.picker_module().choose_plugin_directory(runner=runner))
 
+    def test_folder_dialog_starts_in_the_preferred_directory_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            preferred = Path(temporary_directory)
+
+            script = self.picker_module()._folder_dialog_script(preferred)
+
+            escaped = str(preferred.absolute()).replace("'", "''")
+            self.assertIn(f"$dialog.SelectedPath = '{escaped}'", script)
+
+    def test_folder_dialog_falls_back_when_the_preferred_directory_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            missing = Path(temporary_directory) / "missing"
+
+            script = self.picker_module()._folder_dialog_script(missing)
+
+            self.assertNotIn("$dialog.SelectedPath = '", script)
+
+    def test_default_plugin_directory_is_plugins_dev(self) -> None:
+        self.assertEqual(self.picker_module().DEFAULT_PLUGIN_DIRECTORY, Path(r"E:\plugins-dev"))
+
     def test_process_failure_does_not_expose_stderr(self) -> None:
         runner = lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "private path")
 

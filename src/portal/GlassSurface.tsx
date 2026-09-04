@@ -67,9 +67,9 @@ export function GlassSurface() {
             <feFuncR type="linear" slope={255 / 256} />
             <feFuncG type="linear" slope={255 / 256} />
           </feComponentTransfer>
-          <feDisplacementMap in="SourceGraphic" in2="neutralMap" scale="28" xChannelSelector="R" yChannelSelector="G" result="redShift" />
+          <feDisplacementMap in="SourceGraphic" in2="neutralMap" scale="26" xChannelSelector="R" yChannelSelector="G" result="redShift" />
           <feDisplacementMap in="SourceGraphic" in2="neutralMap" scale="29" xChannelSelector="R" yChannelSelector="G" result="greenShift" />
-          <feDisplacementMap in="SourceGraphic" in2="neutralMap" scale="30" xChannelSelector="R" yChannelSelector="G" result="blueShift" />
+          <feDisplacementMap in="SourceGraphic" in2="neutralMap" scale="32" xChannelSelector="R" yChannelSelector="G" result="blueShift" />
           <feColorMatrix in="redShift" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red" />
           <feColorMatrix in="greenShift" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green" />
           <feColorMatrix in="blueShift" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue" />

@@ -48,10 +48,8 @@ export function ThemeToggle({ className = "", disabled = false }: { className?: 
     className={`portal-theme-toggle ${className}`}
     disabled={disabled}
     onClick={context.toggle}
-    title={label}
     type="button"
   >
     {context.theme === "dark" ? <Sun aria-hidden="true" size={17} /> : <Moon aria-hidden="true" size={17} />}
-    <span className="portal-theme-label">{context.theme === "dark" ? "浅色" : "深色"}</span>
   </button>;
 }

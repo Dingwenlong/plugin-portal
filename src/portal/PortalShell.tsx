@@ -328,7 +328,7 @@ function PortalShellContent({
       setLoading(false);
     });
     return () => { active = false; };
-  }, [resolvedClient, selectedPluginKey]);
+  }, [catalog.revision, resolvedClient, selectedPluginKey]);
 
   if (error) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p role="alert">{error}</p></main>;
   const refreshHubCatalog = async () => {

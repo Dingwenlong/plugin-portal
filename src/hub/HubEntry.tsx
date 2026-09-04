@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
+import { Plus } from "lucide-react";
 
 import { PluginManager, type PluginManagementClient } from "../portal/PluginManager";
 import {
@@ -75,10 +76,19 @@ function HubList({
     <div className="company-dev-hub-sections">
       <div className="company-dev-hub-toolbar">
         <ThemeToggle disabled={!interactive} />
-        {!readOnly && <button ref={includeButtonRef} type="button" tabIndex={interactive ? 0 : -1} onClick={onInclude}>纳入插件</button>}
       </div>
       <section className="company-dev-hub-section" data-hub-section="plugins">
-        <h2>插件</h2>
+        <div className="company-dev-hub-section-heading">
+          <h2>插件</h2>
+          {!readOnly && <button
+            aria-label="纳入插件"
+            className="company-dev-hub-include"
+            ref={includeButtonRef}
+            type="button"
+            tabIndex={interactive ? 0 : -1}
+            onClick={onInclude}
+          ><Plus aria-hidden="true" size={18} strokeWidth={2} /></button>}
+        </div>
         <div className="company-dev-hub-entry-list">
           {catalog.items.length === 0
             ? <p className="company-dev-hub-empty">尚未纳入插件</p>
@@ -95,7 +105,6 @@ function HubList({
                     <PluginBrandIcon pluginKey={item.pluginKey} revision={catalog.revision} />
                     <span>{item.name}</span>
                   </span>
-                  <span className="company-dev-hub-entry-action">进入</span>
                 </a>
                 {!readOnly && onPublish ? <button
                   aria-label={`发布 ${item.name} 下载`}

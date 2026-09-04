@@ -54,9 +54,11 @@ describe("GlassSurface", () => {
     expect(surface).toHaveAttribute("aria-hidden", "true");
     expect(fog).not.toBeNull();
     expect(refraction).not.toBeNull();
+    expect(container.querySelector(".portal-capsule-glass-dispersion")).toBeNull();
     expect(refraction?.style.backdropFilter).toContain(`url("#capsule-glass-`);
     expect((surface as HTMLElement).style.backdropFilter).toBe("");
-    expect(container.querySelectorAll("feDisplacementMap")).toHaveLength(3);
+    expect(Array.from(container.querySelectorAll("feDisplacementMap"), (node) => node.getAttribute("scale")))
+      .toEqual(["26", "29", "32"]);
     expect(container.querySelector("feImage")).toHaveAttribute("href", "data:image/png;base64,bWFw");
     expect(container.querySelector("button, a, nav")).toBeNull();
   });

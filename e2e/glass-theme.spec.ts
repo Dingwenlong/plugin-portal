@@ -84,18 +84,30 @@ test("themes the Hub, every plugin page and the inclusion dialog without changin
       await navigate(page, section, name);
       await expect(page.getByRole("main")).toHaveCSS("color", color);
       await expect(page.locator("body")).toHaveCSS("background-color", theme === "light" ? "rgb(255, 255, 255)" : "rgb(0, 0, 0)");
-      for (const surface of await page.locator(".table-frame, th, .workflow-graph .workflow-step, .markdown-document").all()) {
+      for (const surface of await page.locator(".table-frame, th, .markdown-document").all()) {
         await expect(surface).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      }
+      for (const step of await page.locator(".workflow-graph .workflow-step").all()) {
+        await expect(step).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        await expect(step).toHaveCSS("border-top-width", "0px");
       }
       await expectNoOverflow(page);
     }
     await page.goto(`${portal.baseUrl}/#/hub`);
     const toolbar = page.locator(".company-dev-hub-toolbar");
-    await expect(toolbar.getByRole("button", { name: theme === "light" ? "切换为深色" : "切换为浅色" })).toBeVisible();
-    const [toggle, include] = await Promise.all([
-      toolbar.locator(".portal-theme-toggle").boundingBox(), page.getByRole("button", { name: "纳入插件" }).boundingBox(),
-    ]);
-    expect(toggle!.x + toggle!.width).toBeLessThan(include!.x);
+    const themeToggle = toolbar.getByRole("button", { name: theme === "light" ? "切换为深色" : "切换为浅色" });
+    await expect(themeToggle).toBeVisible();
+    await expect(themeToggle).toHaveText("");
+    await expect(themeToggle).not.toHaveAttribute("title");
+    const heading = page.locator(".company-dev-hub-section-heading");
+    const headingText = heading.getByRole("heading", { level: 2, name: "插件" });
+    const includeButton = heading.getByRole("button", { name: "纳入插件" });
+    await expect(heading).toHaveCSS("gap", "12px");
+    await expect(includeButton).toHaveText("");
+    await expect(includeButton.locator("svg")).toHaveCount(1);
+    const [headingBox, includeBox] = await Promise.all([headingText.boundingBox(), includeButton.boundingBox()]);
+    expect(Math.abs(includeBox!.x - headingBox!.x - headingBox!.width - 12)).toBeLessThan(1);
+    await expect(page.locator(".company-dev-hub-entry-action")).toHaveCount(0);
     await expect(page.locator(".company-dev-hub")).toHaveCSS("color", color);
     await expect(page.locator(".portal-capsule-glass")).toHaveCount(0);
     await page.getByRole("button", { name: "纳入插件" }).click();
@@ -158,7 +170,11 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
   await expect(title).toHaveAttribute("data-original-node", "true");
   await expect(title).toHaveValue("保留未保存步骤");
   await expect(title).toBeFocused();
-  await expect(workflow.getByRole("complementary", { name: "属性栏" })).toHaveCSS("background-color", "rgb(11, 15, 21)");
+  const inspector = workflow.getByRole("complementary", { name: "属性栏" });
+  const canvas = workflow.getByRole("region", { name: "流程画布" });
+  await expect(inspector).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  expect(await inspector.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .not.toBe(await canvas.evaluate((element) => getComputedStyle(element).backgroundColor));
   await expect(workflow.getByRole("region", { name: "流程画布" })).toContainText("保留未保存步骤");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeFocused();
@@ -185,6 +201,8 @@ for (const width of [1600, 1120, 1024, 1023, 768, 390, 320]) {
       const initialCapsule = (await capsule.boundingBox())!;
       expect(Math.abs(initialNav.x + initialNav.width / 2 - initialCapsule.x - initialCapsule.width / 2)).toBeLessThan(1);
       const settings = page.getByRole("button", { name: "外观设置" });
+      await expect(settings).toHaveCSS("border-top-width", "0px");
+      await expect(settings).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       expect((await settings.boundingBox())!.x).toBeGreaterThan(downloadBox.x + downloadBox.width);
       await settings.click();
       const panel = page.getByRole("group", { name: "主题设置" });
@@ -437,6 +455,7 @@ test(`renders measurable static glass depth without moving foreground content in
   expect(depthStyles.capsuleShadow.split(",").length).toBeGreaterThanOrEqual(2);
   expect(fogStyles.backdropFilter).toContain("blur(22px)");
   expect(fogStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(page.locator(".portal-capsule-glass-dispersion")).toHaveCount(0);
   expect(foregroundAfter).toEqual(foregroundBefore);
 });
 
@@ -447,7 +466,7 @@ test(`refracts actual high contrast content without warping the foreground in ${
   const glass = page.locator(".portal-capsule-glass");
   await expect(glass).toHaveAttribute("data-glass-mode", "refractive");
   const refraction = page.locator(".portal-capsule-glass-refraction");
-  await expect(refraction).toHaveCSS("opacity", "0.35");
+  await expect(refraction).toHaveCSS("opacity", theme === "light" ? "0.68" : "0.58");
   // The fixture is page content, not a texture inside the glass filter.
   await page.evaluate(() => {
     const pattern = document.createElement("div");
@@ -459,6 +478,7 @@ test(`refracts actual high contrast content without warping the foreground in ${
     window.scrollTo(0, 150);
   });
   // Keyboard focus deliberately holds the capsule visible over the scrolled fixture.
+  await page.keyboard.press("Tab");
   await page.locator(".portal-capsule nav a").first().focus();
   const capsule = page.locator(".portal-capsule");
   await expect(capsule).toHaveAttribute("data-visibility", "visible");

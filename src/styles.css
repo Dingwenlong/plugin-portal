@@ -8,7 +8,6 @@
   font-synthesis: none;
   --bg: #080b10;
   --surface: #151a21;
-  --border: #343d49;
   --text: #f3f4f7;
   --muted: #a6afba;
   --faint: #7f8996;
@@ -16,9 +15,6 @@
   --accent-hover: #c4d9e7;
   --focus-ring: #c8ddeb;
   --page: #000;
-  --divider: #29313b;
-  --control-border: #394450;
-  --control-hover: #66778a;
   --selected: #303342;
   --dialog: #0b0f15;
   --popover: rgba(14, 19, 27, .97);
@@ -30,7 +26,7 @@
   --glass-fog-blur: 22px;
   --glass-fog-saturation: 110%;
   --glass-refraction-edge: 12px;
-  --glass-refraction-opacity: .35;
+  --glass-refraction-opacity: .58;
   --glass-edge-tint: rgba(10, 15, 24, .24);
   --glass-border: rgba(204, 225, 245, .24);
   --glass-rim-top: rgba(246, 252, 255, .58);
@@ -49,16 +45,12 @@
   --page: #fff;
   --bg: #fff;
   --surface: #f3f5f8;
-  --border: #d4dae2;
   --text: #171c24;
   --muted: #505c6c;
   --faint: #616c7b;
   --accent: #355f80;
   --accent-hover: #153e60;
   --focus-ring: #245f8b;
-  --divider: #dce1e7;
-  --control-border: #b8c2cf;
-  --control-hover: #697c92;
   --selected: #e3e9f0;
   --dialog: #fff;
   --popover: rgba(255, 255, 255, .97);
@@ -68,6 +60,7 @@
   --modal-shadow: 0 24px 80px rgba(24, 41, 64, .16);
   --glass-tint: rgba(255, 255, 255, .62);
   --glass-edge-tint: rgba(255, 255, 255, .34);
+  --glass-refraction-opacity: .68;
   --glass-border: rgba(113, 132, 153, .28);
   --glass-rim-top: rgba(255, 255, 255, .96);
   --glass-rim-left: rgba(255, 255, 255, .72);
@@ -96,6 +89,14 @@ select,
 input,
 textarea {
   font: inherit;
+}
+
+button,
+select,
+input,
+textarea,
+fieldset {
+  border: 0;
 }
 
 a {
@@ -235,7 +236,7 @@ body:has(.portal-layout) {
   align-self: start;
   height: 100vh;
   padding: 24px 16px;
-  border-right: 1px solid var(--divider);
+  border-right: 0;
 }
 
 .portal-brand {
@@ -263,14 +264,17 @@ body:has(.portal-layout) {
   width: 34px;
   height: 34px;
   padding: 7px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 8px;
+  background: var(--surface);
 }
 
 button:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 72%, transparent);
 }
 
 .portal-brand:focus-visible,
@@ -281,8 +285,8 @@ select:focus-visible {
 
 .portal-brand:focus-visible .portal-brand-image,
 .portal-brand:focus-visible .portal-brand-fallback {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 72%, transparent);
 }
 
 .portal-sidebar nav a:focus-visible span {
@@ -291,8 +295,15 @@ select:focus-visible {
 }
 
 .portal-download-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 72%, transparent);
+}
+
+.portal-content a:focus-visible,
+.company-dev-hub-entry:focus-visible {
+  outline: none;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 72%, transparent);
 }
 
 .plugin-selector {
@@ -305,10 +316,16 @@ select:focus-visible {
 .plugin-selector select,
 button {
   padding: 9px 11px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 8px;
   color: var(--text);
-  background: transparent;
+  background: var(--surface);
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+button:not(.portal-cover-enter):hover:not(:disabled),
+select:hover:not(:disabled) {
+  background: var(--selected);
 }
 
 .portal-sidebar nav {
@@ -354,7 +371,7 @@ button {
   justify-content: space-between;
   min-height: 72px;
   padding: 0 32px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 0;
 }
 
 .portal-header h1 {
@@ -375,7 +392,7 @@ button {
   gap: 7px;
   min-height: 40px;
   padding: 9px 11px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 8px;
   color: var(--text);
   background: transparent;
@@ -394,7 +411,7 @@ button {
 .portal-download-action:hover,
 .portal-page-action:hover,
 .portal-capsule-more:hover {
-  border-color: var(--control-hover);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
 .portal-download-action:disabled,
@@ -437,16 +454,29 @@ button {
 
 table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0 8px;
 }
 
 th,
 td {
   padding: 14px 16px;
-  border-bottom: 1px solid var(--divider);
+  border: 0;
   text-align: left;
   vertical-align: top;
 }
+
+tbody td {
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+  transition: background-color 140ms ease;
+}
+
+tbody tr:hover td {
+  background: var(--surface);
+}
+
+tbody td:first-child { border-radius: 10px 0 0 10px; }
+tbody td:last-child { border-radius: 0 10px 10px 0; }
 
 th {
   color: var(--muted);
@@ -482,9 +512,16 @@ td small,
   color: var(--muted);
 }
 
+.content-list {
+  display: grid;
+  gap: 10px;
+}
+
 .content-list article {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--divider);
+  padding: 16px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
 }
 
 .mcp-service-heading {
@@ -646,13 +683,14 @@ td small,
 }
 
 input,
+select,
 textarea {
   width: 100%;
   padding: 9px 11px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 8px;
   color: var(--text);
-  background: transparent;
+  background: var(--surface);
 }
 
 textarea {
@@ -665,9 +703,10 @@ textarea {
   flex-wrap: wrap;
   gap: 0;
   padding: 4px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 12px;
   margin-bottom: 28px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
 }
 
 .workflow-tabs button {
@@ -694,8 +733,9 @@ textarea {
 
 .workflow-step {
   padding: 18px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 64%, transparent);
 }
 
 .workflow-step > span {
@@ -726,7 +766,7 @@ textarea {
   max-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 24px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 14px;
   background: var(--dialog);
   box-shadow: var(--modal-shadow);
@@ -757,24 +797,27 @@ textarea {
 .workflow-editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
   min-height: 560px;
-  border: 1px solid var(--divider);
+  border: 0;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .workflow-editor-canvas,
 .workflow-inspector {
   min-width: 0;
   padding: 20px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 62%, var(--dialog));
 }
 
 .workflow-inspector {
   display: grid;
   align-content: start;
   gap: 14px;
-  border-left: 1px solid var(--divider);
-  background: var(--dialog);
+  border-left: 0;
+  background: color-mix(in srgb, var(--surface) 84%, var(--dialog));
 }
 
 .workflow-inspector h3 {
@@ -820,8 +863,8 @@ textarea {
 
 .workflow-editor-section-title[aria-current="true"],
 .workflow-editor-step[aria-current="true"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: none;
+  background: var(--selected);
 }
 
 .workflow-editor-step {
@@ -844,9 +887,9 @@ textarea {
 
 .workflow-editor-add {
   min-height: 52px;
-  border-style: dashed;
+  border: 0;
   color: var(--muted);
-  background: transparent;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
 .workflow-editor-add-step {
@@ -890,8 +933,9 @@ textarea {
   gap: 8px;
   margin: 0;
   padding: 12px;
-  border: 1px solid var(--divider);
+  border: 0;
   border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 
 .workflow-next-editor label {
@@ -914,8 +958,10 @@ textarea {
 
 .plugin-preview {
   margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--divider);
+  padding: 20px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
 }
 
 .empty-state h2 {
@@ -1047,7 +1093,7 @@ textarea {
   top: calc(100% + 10px);
   right: 0;
   padding: 8px;
-  border: 1px solid var(--glass-border);
+  border: 0;
   border-radius: 14px;
   background: var(--popover);
   box-shadow: var(--modal-shadow);
@@ -1057,11 +1103,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 40px;
+  height: 40px;
   min-height: 40px;
+  padding: 0;
   color: var(--text);
-  font-size: 14px;
-  white-space: nowrap;
 }
 
 .portal-appearance-trigger {
@@ -1072,11 +1118,20 @@ textarea {
   place-items: center;
   border: 0;
   color: var(--muted);
+  background: transparent;
 }
 
 .portal-appearance-trigger svg { transform: rotate(180deg); }
 .portal-appearance-trigger[aria-expanded="true"] svg { transform: none; }
 .portal-appearance-trigger:hover { color: var(--text); }
+.portal-appearance-trigger:focus-visible {
+  outline: none;
+  color: var(--text);
+  box-shadow: none;
+}
+.portal-appearance-trigger:focus-visible svg {
+  filter: drop-shadow(0 0 3px var(--focus-ring));
+}
 .portal-appearance-panel .portal-theme-toggle { border: 0; }
 
 .portal-cover-accretion-host {
@@ -1185,7 +1240,7 @@ textarea {
 }
 
 .company-dev-hub-toolbar button {
-  border-color: var(--border);
+  border: 0;
   color: var(--text);
 }
 
@@ -1194,37 +1249,40 @@ textarea {
   grid-template-columns: minmax(100px, 150px) minmax(0, 1fr);
   gap: 28px;
   padding-top: 18px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
 }
 
+.company-dev-hub-section-heading { display: flex; align-items: center; align-self: start; gap: 12px; }
 .company-dev-hub-section h2 { margin: 0; color: var(--muted); font-size: 18px; font-weight: 720; line-height: 1.4; }
-.company-dev-hub-entry-list { min-width: 0; display: grid; }
-.company-dev-hub-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
-.company-dev-hub-entry { width: 100%; min-width: 0; min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; color: var(--text); font-size: 14px; font-weight: 680; text-decoration: none; }
+.company-dev-hub-include { flex: 0 0 auto; width: 32px; height: 32px; min-height: 32px; display: inline-grid; padding: 0; place-items: center; color: var(--muted); background: transparent; }
+.company-dev-hub-include:hover { color: var(--text); }
+.company-dev-hub-entry-list { min-width: 0; display: grid; gap: 6px; }
+.company-dev-hub-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 12px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--surface) 46%, transparent); transition: background-color 140ms ease; }
+.company-dev-hub-entry-row:hover { background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.company-dev-hub-entry { width: 100%; min-width: 0; min-height: 54px; display: flex; align-items: center; padding: 12px 0; color: var(--text); font-size: 14px; font-weight: 680; text-decoration: none; }
 .company-dev-hub-entry:hover { color: var(--accent-hover); }
 .company-dev-hub-entry-identity { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .company-dev-hub-entry-identity > span { min-width: 0; overflow-wrap: anywhere; }
 .company-dev-hub-entry-identity .portal-brand-image,
 .company-dev-hub-entry-identity .portal-brand-fallback { width: 30px; height: 30px; }
 .company-dev-hub-entry-identity .portal-brand-fallback { padding: 3px; border: 0; }
-.company-dev-hub-entry-action { flex: 0 0 auto; color: var(--accent); font-size: 12px; font-weight: 700; }
-.company-dev-hub-publish { flex: 0 0 auto; padding: 7px 10px; color: var(--muted); background: transparent; font-size: 12px; }
-.company-dev-hub-publish:hover { color: var(--text); }
+.company-dev-hub-publish { flex: 0 0 auto; padding: 7px 10px; border: 0; color: var(--muted); background: transparent; font-size: 12px; }
+.company-dev-hub-publish:hover { color: var(--text); background: var(--selected); }
 .company-dev-hub-empty { margin: 12px 0; color: var(--muted); }
 
 .download-publication { display: grid; gap: 18px; }
 .download-publication > p { margin: 0; color: var(--muted); }
 .download-publication-file { display: grid; gap: 8px; color: var(--muted); }
 .download-publication-file [role="status"] { color: var(--text); }
-.download-publication-preview { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--divider); }
-.download-publication-preview > div { min-width: 0; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.download-publication-preview { display: grid; gap: 6px; margin: 0; border: 0; }
+.download-publication-preview > div { min-width: 0; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; padding: 10px 12px; border: 0; border-radius: 9px; background: color-mix(in srgb, var(--surface) 66%, transparent); }
 .download-publication-preview dt { color: var(--muted); }
 .download-publication-preview dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .download-publication-preview code { font-size: 12px; word-break: break-all; }
-.download-publication-warnings { padding: 14px 16px; border: 1px solid var(--control-border); border-radius: 10px; }
+.download-publication-warnings { padding: 14px 16px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .download-publication-warnings h3 { margin: 0 0 8px; font-size: 14px; }
 .download-publication-warnings ul { margin: 0; padding-left: 20px; color: var(--muted); }
-.download-publication-success { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--control-border); border-radius: 10px; }
+.download-publication-success { display: grid; gap: 6px; padding: 16px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .download-publication-success span { color: var(--muted); overflow-wrap: anywhere; }
 
 .hub-plugin-dialog-backdrop {
@@ -1242,10 +1300,11 @@ textarea {
   max-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 24px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 14px;
   background: var(--dialog);
   color: var(--text);
+  box-shadow: var(--modal-shadow);
 }
 
 .hub-plugin-dialog-actions {
@@ -1265,7 +1324,7 @@ textarea {
     position: static;
     height: auto;
     border-right: 0;
-    border-bottom: 1px solid var(--divider);
+    border-bottom: 0;
   }
 
   .portal-sidebar-download {
@@ -1363,7 +1422,7 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     padding: 10px;
-    border: 1px solid var(--glass-border);
+    border: 0;
     border-radius: 18px;
     background: var(--popover);
     box-shadow: var(--modal-shadow);
@@ -1395,7 +1454,6 @@ textarea {
     padding: 0;
   }
 
-  .portal-theme-compact .portal-theme-label { display: none; }
 }
 
 @media (max-width: 899px) {
@@ -1408,7 +1466,7 @@ textarea {
   }
 
   .workflow-inspector {
-    border-top: 1px solid var(--divider);
+    border-top: 0;
     border-left: 0;
   }
 }

@@ -7,11 +7,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 
+DEFAULT_PLUGIN_DIRECTORY = Path(r"E:\plugins-dev")
+_INITIAL_DIRECTORY_TOKEN = "__PLUGIN_PORTAL_INITIAL_DIRECTORY__"
 _FOLDER_DIALOG_SCRIPT = """
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+__PLUGIN_PORTAL_INITIAL_DIRECTORY__
 $dialog.Description = '选择 Codex 插件目录'
 $dialog.ShowNewFolderButton = $false
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -38,6 +41,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 def choose_plugin_directory(
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    preferred_directory: Path | str = DEFAULT_PLUGIN_DIRECTORY,
 ) -> Path | None:
     if os.name != "nt":
         raise RuntimeError("当前系统不支持插件目录选择器")
@@ -52,7 +56,7 @@ def choose_plugin_directory(
                 "-NonInteractive",
                 "-STA",
                 "-Command",
-                _FOLDER_DIALOG_SCRIPT,
+                _folder_dialog_script(Path(preferred_directory)),
             ],
             capture_output=True,
             text=True,
@@ -73,6 +77,14 @@ def choose_plugin_directory(
     if not _is_ordinary_directory(directory):
         raise RuntimeError("选择的插件目录无效")
     return directory
+
+
+def _folder_dialog_script(preferred_directory: Path) -> str:
+    assignment = ""
+    if _is_ordinary_directory(preferred_directory):
+        escaped = str(preferred_directory.absolute()).replace("'", "''")
+        assignment = f"$dialog.SelectedPath = '{escaped}'"
+    return _FOLDER_DIALOG_SCRIPT.replace(_INITIAL_DIRECTORY_TOKEN, assignment)
 
 
 def choose_plugin_archive(

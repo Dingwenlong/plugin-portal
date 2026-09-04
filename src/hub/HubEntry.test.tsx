@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { HubEntry } from "./HubEntry";
@@ -90,6 +90,14 @@ describe("HubEntry plugin icons", () => {
 
   it("shows each plugin's local icon before its name without changing the entry link", () => {
     renderHub();
+    const include = screen.getByRole("button", { name: "纳入插件" });
+    const heading = include.closest(".company-dev-hub-section-heading");
+    expect(heading).not.toBeNull();
+    const title = within(heading as HTMLElement).getByRole("heading", { level: 2, name: "插件" });
+    expect(title.nextElementSibling).toBe(include);
+    expect(include).not.toHaveTextContent("纳入插件");
+    expect(include.querySelector("svg")).not.toBeNull();
+
     for (const item of catalog.items) {
       const entry = screen.getByRole("link", { name: item.name });
       const identity = entry.querySelector(".company-dev-hub-entry-identity");
@@ -99,7 +107,8 @@ describe("HubEntry plugin icons", () => {
       expect(identity?.firstElementChild).toBe(icon);
       expect(identity?.lastElementChild).toHaveTextContent(item.name);
       expect(entry).toHaveAttribute("href", `#/plugins/${item.id}/overview`);
-      expect(entry).toHaveTextContent("进入");
+      expect(entry).not.toHaveTextContent("进入");
+      expect(entry.querySelector(".company-dev-hub-entry-action")).toBeNull();
     }
   });
 

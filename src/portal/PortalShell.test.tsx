@@ -281,6 +281,61 @@ describe("PortalShell", () => {
     );
   });
 
+  it("reloads the selected plugin data after that plugin is included again", async () => {
+    const client = createClient();
+    const initial = await client.listPlugins();
+    const plugin = initial.items[0];
+    const initialSnapshot = await client.getSnapshot(plugin.pluginKey);
+    const getSnapshot = vi.spyOn(client, "getSnapshot");
+    const getPrompts = vi.spyOn(client, "getPrompts");
+    const getWorkflows = vi.spyOn(client, "getWorkflows");
+    client.getAccessMode = async () => ({ readOnly: false, fileSelectionMode: "browser-upload" });
+    client.listPlugins = vi.fn()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue({ ...initial, revision: initial.revision + 1 });
+    client.uploadPluginArchive = vi.fn().mockResolvedValue({
+      uploadId: "upload-refresh", fileName: "plugin.zip", archiveBytes: 3,
+    });
+    client.previewImport = vi.fn().mockResolvedValue({
+      candidateId: "candidate-refresh",
+      pluginKey: plugin.pluginKey,
+      snapshot: initialSnapshot,
+    });
+    client.promote = vi.fn().mockResolvedValue({
+      revision: initial.revision + 1,
+      pluginKey: plugin.pluginKey,
+      snapshotId: "d".repeat(64),
+    });
+    window.location.hash = `#/plugins/${plugin.id}/overview`;
+    render(<PortalShell client={client} />);
+
+    expect(await screen.findByText("尚未配置鸟瞰全景流程")).toBeInTheDocument();
+    expect(getSnapshot).toHaveBeenCalledTimes(1);
+    expect(getPrompts).toHaveBeenCalledTimes(1);
+    expect(getWorkflows).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      window.location.hash = "#/hub";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "纳入插件" }));
+    fireEvent.change(screen.getByLabelText("插件 ZIP"), {
+      target: { files: [new File(["zip"], "plugin.zip", { type: "application/zip" })] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "确认纳入" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument());
+
+    act(() => {
+      window.location.hash = `#/plugins/${plugin.id}/overview`;
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await waitFor(() => expect(screen.queryByText("正在读取公开资料…")).not.toBeInTheDocument());
+    expect(await screen.findByText("尚未配置鸟瞰全景流程")).toBeInTheDocument();
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(getPrompts).toHaveBeenCalledTimes(2);
+    expect(getWorkflows).toHaveBeenCalledTimes(2);
+  });
+
   it("turns each plugin page into a single-plugin site without management or switching", async () => {
     const { rerender } = render(
       <PortalShell

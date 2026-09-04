@@ -49,6 +49,8 @@ test.describe("original cover", () => {
     await expect(start).toHaveCSS("height", "112px");
     await start.hover();
     await expect(start).toHaveCSS("border-top-width", "0px");
+    await expect(start).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(start).toHaveCSS("box-shadow", "none");
     const buttonCanvas = page.locator("[data-cover-liquid-glass-canvas]");
     await expect.poll(async () => Number(await buttonCanvas.getAttribute("data-rendered-frame")), { timeout: 12_000 }).toBeGreaterThan(0);
     await expect(buttonCanvas).toHaveAttribute("data-orb-style", "particleRibbon");
