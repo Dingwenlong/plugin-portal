@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -275,6 +275,7 @@ describe("PromptsView", () => {
       { id: "check", scenario: "检查设计", content: "新内容", createdAt: "2026-08-12T07:38:30.798Z" },
     ]);
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "删除 检查设计" })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "删除 检查设计" }));
     expect(onSave).toHaveBeenLastCalledWith(4, []);
   });

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "runtime": {"path": "C:/PortalCandidate/runtime", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "python": {"path": "C:/PortalDependencies/python/python.exe", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "caddy": {"path": "C:/PortalDependencies/caddy.exe", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "caddyConfig": {"path": "C:/PortalCandidate/https/Caddyfile", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "certificate": {"path": "C:/PortalCandidate/https/root.crt", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256", "thumbprint": "REPLACE_WITH_VERIFIED_SYSTEM_ROOT_THUMBPRINT"},
+  "dataRoot": "C:/PortalCandidate/data",
+  "logRoot": "C:/PortalCandidate/logs",
+  "lanAddress": "192.168.1.100",
+  "auditConfigPath": "C:/PortalCandidate/audit-config.json",
+  "maxRestarts": 2,
+  "restartDelaySeconds": 2
+}

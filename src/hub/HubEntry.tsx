@@ -1,5 +1,7 @@
 import {
   useEffect,
+  createContext,
+  useContext,
   useRef,
   useState,
   type AnimationEvent,
@@ -9,14 +11,11 @@ import {
 import { Plus } from "lucide-react";
 
 import { PluginManager, type PluginManagementClient } from "../portal/PluginManager";
-import {
-  DownloadPublisherDialog,
-  type DownloadPublicationClient,
-} from "../portal/DownloadPublisher";
 import { PluginBrandIcon } from "../portal/PluginBrandIcon";
+import { PortalModal } from "../portal/PortalModal";
 import { ThemeToggle } from "../portal/PortalTheme";
 import { portalHref } from "../portal/routes";
-import type { PluginCatalog, PluginListItem, PortalAccess } from "../portal/types";
+import type { PluginCatalog, PortalAccess } from "../portal/types";
 import { CoverAccretionBackground } from "./CoverAccretionBackground";
 import {
   CoverLiquidGlassButton,
@@ -43,6 +42,7 @@ const ENGULF_ANIMATIONS = new Set([
 ]);
 const REVEAL_ANIMATIONS = new Set(["hub-entry-reveal", "hub-entry-reduced-reveal"]);
 type EntryTransitionMode = "scaled" | "fade";
+const HubLoadContext = createContext<{ status: "loading" | "ready" | "error"; error?: string; retry?: () => void }>({ status: "ready" });
 
 export function reduceEntryPhase(phase: EntryPhase, event: EntryEvent): EntryPhase {
   if (event === "reset") return "idle";
@@ -61,7 +61,6 @@ function HubList({
   firstEntryRef,
   includeButtonRef,
   onInclude,
-  onPublish,
 }: {
   catalog: PluginCatalog;
   interactive: boolean;
@@ -69,8 +68,8 @@ function HubList({
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
-  onPublish?: (plugin: PluginListItem, trigger: HTMLButtonElement) => void;
 }) {
+  const loading = useContext(HubLoadContext);
   return <main className="company-dev-hub" data-company-dev-hub aria-hidden={!interactive || undefined}>
     <h1 className="sr-only">已纳入插件</h1>
     <div className="company-dev-hub-sections">
@@ -90,7 +89,9 @@ function HubList({
           ><Plus aria-hidden="true" size={18} strokeWidth={2} /></button>}
         </div>
         <div className="company-dev-hub-entry-list">
-          {catalog.items.length === 0
+          {loading.error && <div className="portal-resource-notice"><p role="alert">{loading.error}</p><button onClick={loading.retry} type="button">重试读取</button></div>}
+          {loading.status === "loading" && <p role="status">正在读取插件…</p>}
+          {catalog.items.length === 0 && loading.status === "ready"
             ? <p className="company-dev-hub-empty">尚未纳入插件</p>
             : catalog.items.map((item, index) => <div className="company-dev-hub-entry-row" key={item.pluginKey}>
                 <a
@@ -106,13 +107,6 @@ function HubList({
                     <span>{item.name}</span>
                   </span>
                 </a>
-                {!readOnly && onPublish ? <button
-                  aria-label={`发布 ${item.name} 下载`}
-                  className="company-dev-hub-publish"
-                  onClick={(event) => onPublish(item, event.currentTarget)}
-                  tabIndex={interactive ? 0 : -1}
-                  type="button"
-                >发布下载</button> : null}
               </div>)}
         </div>
       </section>
@@ -136,7 +130,6 @@ function GenericHubView({
   firstEntryRef,
   includeButtonRef,
   onInclude,
-  onPublish,
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
@@ -153,7 +146,6 @@ function GenericHubView({
   firstEntryRef?: RefObject<HTMLAnchorElement | null>;
   includeButtonRef?: RefObject<HTMLButtonElement | null>;
   onInclude: () => void;
-  onPublish?: (plugin: PluginListItem, trigger: HTMLButtonElement) => void;
 }) {
   const effectivePhase = route === "hub" && phase === "idle" ? "hub" : phase;
   const showHub = effectivePhase === "revealing" || effectivePhase === "hub";
@@ -167,7 +159,6 @@ function GenericHubView({
       firstEntryRef={firstEntryRef}
       includeButtonRef={includeButtonRef}
       onInclude={onInclude}
-      onPublish={onPublish}
     />}
     {showCover && <HubCover
       effectivePhase={effectivePhase}
@@ -249,14 +240,12 @@ function InteractiveHub({
   route,
   onNavigate,
   onInclude,
-  onPublish,
 }: {
   catalog: PluginCatalog;
   route: HubRoute;
   readOnly: boolean;
   onNavigate: (route: HubRoute) => void;
   onInclude: () => void;
-  onPublish?: (plugin: PluginListItem, trigger: HTMLButtonElement) => void;
 }) {
   const initial = route === "hub" ? "hub" : "idle";
   const [phase, setPhase] = useState<EntryPhase>(initial);
@@ -411,7 +400,6 @@ function InteractiveHub({
     firstEntryRef={firstEntryRef}
     includeButtonRef={includeButtonRef}
     onInclude={onInclude}
-    onPublish={onPublish}
     onStart={start}
     onButtonAnimationEnd={(event) => animationCompleted(event.animationName)}
     onCoverAnimationEnd={(event) => {
@@ -428,16 +416,20 @@ export function HubEntry({
   route,
   onNavigate,
   onCatalogChanged,
-  onDownloadPublished,
+  catalogStatus = "ready",
+  catalogError,
+  onRetryCatalog,
 }: {
   access?: PortalAccess;
   catalog: PluginCatalog;
-  client: PluginManagementClient & Partial<DownloadPublicationClient>;
+  client: PluginManagementClient;
   readOnly?: boolean;
   route: HubRoute;
   onNavigate: (route: HubRoute) => void;
   onCatalogChanged: () => Promise<void>;
-  onDownloadPublished?: (pluginKey: string) => Promise<void>;
+  catalogStatus?: "loading" | "ready" | "error";
+  catalogError?: string;
+  onRetryCatalog?: () => void;
 }) {
   const effectiveAccess = access ?? {
     readOnly,
@@ -445,45 +437,16 @@ export function HubEntry({
   };
   const managementReadOnly = effectiveAccess.readOnly;
   const [including, setIncluding] = useState(false);
-  const [publishingPlugin, setPublishingPlugin] = useState<PluginListItem>();
-  const publicationTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const publicationClient = (
-    typeof client.selectDownloadCandidate === "function" &&
-    typeof client.confirmDownloadPublication === "function" &&
-    (effectiveAccess.fileSelectionMode !== "browser-upload"
-      || typeof client.uploadDownloadCandidate === "function")
-  ) ? client as PluginManagementClient & DownloadPublicationClient : undefined;
 
-  useEffect(() => {
-    if (!including) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIncluding(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [including]);
-
-  useEffect(() => {
-    if (!publishingPlugin) publicationTriggerRef.current?.focus();
-  }, [publishingPlugin]);
-
-  return <>
+  return <HubLoadContext.Provider value={{ status: catalogStatus, error: catalogError, retry: onRetryCatalog }}>
     <InteractiveHub
       readOnly={managementReadOnly}
       catalog={catalog}
       route={route}
       onNavigate={onNavigate}
       onInclude={() => setIncluding(true)}
-      onPublish={publicationClient ? (plugin, trigger) => {
-        publicationTriggerRef.current = trigger;
-        setPublishingPlugin(plugin);
-      } : undefined}
     />
-    {!managementReadOnly && including ? <div className="hub-plugin-dialog-backdrop">
-      <section className="hub-plugin-dialog" role="dialog" aria-modal="true" aria-label="纳入插件">
-        <div className="hub-plugin-dialog-actions">
-          <button type="button" onClick={() => setIncluding(false)}>关闭</button>
-        </div>
+    {!managementReadOnly && including ? <PortalModal title="纳入插件" onClose={() => setIncluding(false)}>
         <PluginManager
           catalogRevision={catalog.revision}
           client={client}
@@ -493,14 +456,6 @@ export function HubEntry({
             setIncluding(false);
           }}
         />
-      </section>
-    </div> : null}
-    {!managementReadOnly && publishingPlugin && publicationClient ? <DownloadPublisherDialog
-      client={publicationClient}
-      fileSelectionMode={effectiveAccess.fileSelectionMode}
-      onClose={() => setPublishingPlugin(undefined)}
-      onPublished={(receipt) => onDownloadPublished?.(receipt.pluginKey)}
-      plugin={publishingPlugin}
-    /> : null}
-  </>;
+    </PortalModal> : null}
+  </HubLoadContext.Provider>;
 }

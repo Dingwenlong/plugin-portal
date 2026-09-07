@@ -165,12 +165,6 @@ class PortalApi:
         else:
             raise ApiError("插件来源结构无效")
 
-        if uploaded_id is not None:
-            try:
-                self.uploads.consume(token, "plugin-import", uploaded_id)
-            except UploadError as error:
-                raise self._upload_error(error) from None
-
         plugin_key = f"{snapshot['plugin']['target']}/{snapshot['plugin']['id']}"
         candidate_id = secrets.token_urlsafe(24)
         with self._lock:
@@ -179,6 +173,8 @@ class PortalApi:
                 "pluginKey": plugin_key,
                 "snapshot": deepcopy(snapshot),
             }
+            if uploaded_id is not None:
+                candidate["uploadId"] = uploaded_id
             if icon is not None:
                 candidate["icon"] = icon
             candidates[candidate_id] = candidate
@@ -213,12 +209,18 @@ class PortalApi:
             raise ApiError("插件身份不一致", code="plugin_identity_mismatch")
 
         snapshot = candidate["snapshot"]
+        catalog = self._catalog()
+        if catalog["revision"] != body["expectedRevision"]:
+            raise ApiError("资料已更新，请刷新后重试", status=409, code="revision_conflict")
+
+        upload_id = candidate.get("uploadId")
+        if upload_id is not None:
+            self._publish_uploaded_import(token, plugin_key, snapshot, upload_id)
         try:
             snapshot_id = self.store.put_snapshot(plugin_key, snapshot)
             icon = candidate.get("icon")
             if icon is not None:
                 self.store.put_snapshot_icon(plugin_key, snapshot_id, icon[0], icon[1])
-            catalog = self._catalog()
             record = catalog["data"]["plugins"].get(plugin_key, {"activeSnapshot": None, "history": []})
             history = list(record["history"])
             if snapshot_id not in history:
@@ -234,9 +236,49 @@ class PortalApi:
             raise ApiError(str(error), status=409, code="revision_conflict") from None
         except StorageError:
             raise ApiError("无法切换活动插件快照", status=500, code="storage_failed") from None
+
+        if upload_id is not None:
+            try:
+                if self.uploads is not None:
+                    self.uploads.consume(token, "plugin-import", upload_id)
+            except UploadError:
+                pass
         with self._lock:
             candidates.pop(body["candidateId"], None)
         return {"revision": written["revision"], "pluginKey": plugin_key, "snapshotId": snapshot_id}
+
+    def _publish_uploaded_import(
+        self,
+        token: str,
+        plugin_key: str,
+        snapshot: dict[str, Any],
+        upload_id: object,
+    ) -> None:
+        if not isinstance(upload_id, str) or self.uploads is None:
+            raise ApiError("导入候选不存在或已失效", status=404, code="candidate_not_found")
+        if self.download_publisher is None:
+            raise ApiError("下载发布服务不可用", status=503, code="publication_unavailable")
+        try:
+            upload = self.uploads.require(token, "plugin-import", upload_id)
+        except UploadError:
+            raise ApiError("导入候选不存在或已失效", status=404, code="candidate_not_found") from None
+
+        plugin = snapshot.get("plugin")
+        version = plugin.get("version") if isinstance(plugin, dict) else None
+        try:
+            publication = self.download_publisher.preview(
+                upload.path,
+                plugin_key=plugin_key,
+                expected_version=version,
+            )
+            try:
+                self.download_publisher.publish(publication)
+            except DownloadPublicationError as error:
+                if error.code != "destination_exists":
+                    raise
+                self.download_publisher.confirm_existing(publication)
+        except DownloadPublicationError as error:
+            raise self._publication_error(error) from None
 
     def select_download_candidate(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
         candidates = self._require_session(token)
@@ -466,8 +508,14 @@ class PortalApi:
         href = f"{_DOWNLOAD_BASE_URL}{plugin_id}-{version}-{target}.zip"
         try:
             available = self.download_probe(href) is True
+        except ApiError:
+            raise
         except Exception:
-            available = False
+            raise ApiError(
+                "无法确认下载文件状态",
+                status=502,
+                code="download_probe_failed",
+            ) from None
         return {"available": available, "version": version, "href": href if available else None}
 
     def get_plugin_icon(self, plugin_key: str) -> tuple[str, bytes]:
@@ -661,18 +709,43 @@ def _probe_local_download(url: str) -> bool:
         or not parsed.path.startswith("/downloads/")
         or not parsed.path.endswith(".zip")
     ):
-        return False
-    connection = http.client.HTTPConnection("127.0.0.1", 9134, timeout=1.5)
+        raise ApiError("无法确认下载文件状态", status=502, code="download_probe_failed")
+    connection: http.client.HTTPConnection | None = None
     try:
+        connection = http.client.HTTPConnection("127.0.0.1", 9134, timeout=1.5)
         connection.request("HEAD", parsed.path, headers={"Accept": "application/zip"})
         response = connection.getresponse()
+        if response.status == 404:
+            return False
+        if response.status != 200:
+            raise ApiError(
+                "无法确认下载文件状态",
+                status=502,
+                code="download_probe_failed",
+            )
         content_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
         content_length = response.getheader("Content-Length", "")
-        return response.status == 200 and content_type in {
-            "application/zip",
-            "application/x-zip-compressed",
-        } and content_length.isdigit() and int(content_length) > 0
-    except OSError:
-        return False
+        if content_type not in {"application/zip", "application/x-zip-compressed"}:
+            raise ApiError(
+                "无法确认下载文件状态",
+                status=502,
+                code="download_probe_failed",
+            )
+        if not content_length.isdigit() or int(content_length) <= 0:
+            raise ApiError(
+                "无法确认下载文件状态",
+                status=502,
+                code="download_probe_failed",
+            )
+        return True
+    except ApiError:
+        raise
+    except (OSError, http.client.HTTPException):
+        raise ApiError(
+            "无法确认下载文件状态",
+            status=502,
+            code="download_probe_failed",
+        ) from None
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()

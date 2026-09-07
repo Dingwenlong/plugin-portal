@@ -45,6 +45,10 @@ test("remote HTTPS management uploads, edits and publishes without server paths"
   await includeDialog.getByRole("button", { name: "确认纳入" }).click();
   await expect(includeDialog).toHaveCount(0);
 
+  const publishedFile = "project-delivery-hub-3.7.19-company-dev.zip";
+  expect(portal.hasPublishedDownload(publishedFile)).toBe(true);
+  expect(portal.publishedDownloadSha256(publishedFile)).toBe(portal.expectedPluginArchiveSha256);
+
   const pluginLink = page.getByRole("link", { name: "研发助手插件" });
   await expect(pluginLink).toBeVisible();
   const icon = pluginLink.locator("img");
@@ -75,18 +79,6 @@ test("remote HTTPS management uploads, edits and publishes without server paths"
   await expect(workflowDialog).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "远程流程" })).toBeVisible();
 
-  await page.goto(`${baseUrl}/#/hub`);
-  await page.getByRole("button", { name: "发布 研发助手插件 下载" }).click();
-  const publication = page.getByRole("dialog", { name: "发布 研发助手插件 下载" });
-  await expect(publication.getByRole("button", { name: "选择候选 ZIP" })).toHaveCount(0);
-  await publication.getByLabel("下载候选 ZIP").setInputFiles(portal.downloadArchivePath);
-  await expect(publication.getByText("project-delivery-hub-3.7.19-company-dev.zip", { exact: true })).toBeVisible();
-  await publication.getByRole("button", { name: "确认发布" }).click();
-  await expect(publication.getByRole("status")).toContainText("发布成功");
-  expect(portal.hasPublishedDownload("project-delivery-hub-3.7.19-company-dev.zip")).toBe(true);
-  expect(portal.publishedDownloadSha256("project-delivery-hub-3.7.19-company-dev.zip"))
-    .toBe(portal.expectedCandidateSha256);
-
   await page.goto(`${baseUrl}/#/plugins/project-delivery-hub/skills`);
   await expect(page.getByRole("link", { name: "下载最新版 v3.7.19" })).toHaveAttribute(
     "href",
@@ -106,7 +98,7 @@ test("remote HTTPS management uploads, edits and publishes without server paths"
     }
     await page.goto(`${baseUrl}/#/hub`);
     await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "发布 研发助手插件 下载" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /发布 .* 下载/ })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 

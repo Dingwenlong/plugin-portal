@@ -16,7 +16,8 @@ from urllib.parse import quote, unquote, urlsplit
 
 from .api import ApiError, PortalApi
 from .directory_picker import choose_plugin_archive, choose_plugin_directory
-from .download_publication import DownloadPublisher, PluginReleaseAuditor, read_9134_download
+from .download_publication import DownloadPublisher, read_9134_download
+from .audit_config import ConfiguredPluginReleaseAuditor
 from .lan_download import read_download
 from .storage import PortalStore
 from .uploads import UploadRegistry
@@ -111,7 +112,7 @@ def create_server(
         publisher = DownloadPublisher(
             download_root=_default_download_root(),
             receipt_root=store.root / "download-publications",
-            auditor=PluginReleaseAuditor(),
+            auditor=ConfiguredPluginReleaseAuditor(),
             download_reader=read_9134_download,
         )
     return PortalHTTPServer(

@@ -34,6 +34,7 @@ export interface TestPortal {
   downloadArchivePath: string;
   seedPublishedDownload(fileName: string): void;
   expectedCandidateSha256: string;
+  expectedPluginArchiveSha256: string;
   hasPublishedDownload(fileName: string): boolean;
   publishedDownloadSha256(fileName: string): string | null;
   seedUserContent(): Promise<void>;
@@ -75,6 +76,9 @@ export async function startTestPortal(): Promise<TestPortal> {
     writePluginArchive(pickerPluginRoot, pluginArchivePath);
   };
   preparePickerPlugin("3.7.19");
+  const expectedPluginArchiveSha256 = createHash("sha256")
+    .update(readFileSync(pluginArchivePath))
+    .digest("hex");
 
   const server = spawn(
     process.env.PYTHON ?? "python",
@@ -167,6 +171,7 @@ export async function startTestPortal(): Promise<TestPortal> {
     downloadArchivePath,
     seedPublishedDownload: (fileName) => writeFileSync(join(downloadRoot, fileName), archiveBytes),
     expectedCandidateSha256,
+    expectedPluginArchiveSha256,
     hasPublishedDownload: (fileName) => existsSync(join(downloadRoot, fileName)),
     publishedDownloadSha256: (fileName) => {
       const path = join(downloadRoot, fileName);

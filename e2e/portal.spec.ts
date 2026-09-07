@@ -123,7 +123,7 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByRole("button", { name: "Start" })).toBeEnabled();
   });
 
-  test("publishes an audited candidate from the Hub without exposing its local path", async ({ page }) => {
+  test("keeps the duplicate publication action out of the Hub", async ({ page }) => {
     const fileName = "project-delivery-hub-3.7.19-company-dev.zip";
     const catalog = await portal.listPlugins();
     if (!catalog.items.some((item) => item.id === "project-delivery-hub")) {
@@ -134,22 +134,9 @@ test.describe.serial("Plugin Portal", () => {
     }
     expect(portal.hasPublishedDownload(fileName)).toBe(false);
     await page.goto(`${portal.baseUrl}/#/hub`);
-    await page.getByRole("button", { name: "发布 研发助手插件 下载" }).click();
-    const dialog = page.getByRole("dialog", { name: "发布 研发助手插件 下载" });
-    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("button", { name: /发布 .* 下载/ })).toHaveCount(0);
 
-    const selectedResponse = page.waitForResponse((response) => response.url().endsWith("/download-publication/select"));
-    await dialog.getByRole("button", { name: "选择候选 ZIP" }).click();
-    const selectedBody = await (await selectedResponse).text();
-    await expect(dialog.getByText(fileName)).toBeVisible();
-    expect(selectedBody).not.toMatch(/[A-Za-z]:\\/);
-    expect(selectedBody).not.toContain("sourcePath");
-
-    const confirmedResponse = page.waitForResponse((response) => response.url().endsWith("/download-publication/confirm"));
-    await dialog.getByRole("button", { name: "确认发布" }).click();
-    const confirmedBody = await (await confirmedResponse).text();
-    await expect(dialog.getByRole("status")).toContainText("发布成功");
-    expect(confirmedBody).not.toMatch(/[A-Za-z]:\\/);
+    portal.seedPublishedDownload(fileName);
     expect(portal.hasPublishedDownload(fileName)).toBe(true);
     expect(portal.publishedDownloadSha256(fileName)).toBe(portal.expectedCandidateSha256);
 

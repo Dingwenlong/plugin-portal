@@ -263,6 +263,31 @@ class DownloadPublisher:
             if stage is not None:
                 stage.unlink(missing_ok=True)
 
+    def confirm_existing(self, candidate: PublicationCandidate) -> None:
+        if not isinstance(candidate, PublicationCandidate):
+            raise DownloadPublicationError("publication_invalid", "发布候选无效")
+        source_info = self._ordinary_file_info(candidate.source_path)
+        if source_info is None or self._identity(source_info) != candidate.source_identity:
+            raise DownloadPublicationError("candidate_changed", "候选在确认前已改变")
+
+        destination = self.download_root / candidate.destination_file_name
+        destination_info = self._ordinary_file_info(destination)
+        if destination_info is None or destination_info.st_size != candidate.audit.archive_bytes:
+            raise DownloadPublicationError("destination_exists", "相同版本的下载文件已存在且内容不同")
+        try:
+            readback_bytes, readback_sha256 = self.download_reader(candidate.destination_file_name)
+        except Exception:
+            raise DownloadPublicationError("download_readback_failed", "9134 下载回读失败") from None
+        if (
+            readback_bytes != candidate.audit.archive_bytes
+            or readback_sha256 != candidate.audit.candidate_sha256
+        ):
+            raise DownloadPublicationError("destination_exists", "相同版本的下载文件已存在且内容不同")
+
+        source_info = self._ordinary_file_info(candidate.source_path)
+        if source_info is None or self._identity(source_info) != candidate.source_identity:
+            raise DownloadPublicationError("candidate_changed", "候选在确认前已改变")
+
     def _write_receipt(self, candidate: PublicationCandidate, receipt: PublicationReceipt) -> None:
         self.receipt_root.mkdir(parents=True, exist_ok=True)
         if self._ordinary_directory_info(self.receipt_root) is None:
@@ -416,13 +441,17 @@ class PluginReleaseAuditor:
         codex_home: Path | str | None = None,
         codex_command: tuple[str, ...] = ("codex",),
         python_executable: str = sys.executable,
+        tool_name: str = "plugin-release",
     ):
+        if tool_name not in {"plugin-release", "plugin-inspector"}:
+            raise DownloadPublicationError("plugin_release_unavailable", "不支持的发布审计工具")
         home = Path(codex_home) if codex_home is not None else Path(
             os.environ.get("CODEX_HOME", Path.home() / ".codex")
         )
         self.codex_home = home.expanduser().absolute()
         self.codex_command = codex_command
         self.python_executable = python_executable
+        self.tool_name = tool_name
 
     def audit(
         self,
@@ -466,6 +495,7 @@ class PluginReleaseAuditor:
             target=target,
             expected_sha256=expected_sha256,
             expected_tool_version=version,
+            expected_tool_name=self.tool_name,
         )
 
     def _resolve_script(self) -> tuple[str, Path]:
@@ -484,8 +514,8 @@ class PluginReleaseAuditor:
             item
             for item in installed
             if isinstance(item, dict)
-            and item.get("pluginId") == "plugin-release@company-dev"
-            and item.get("name") == "plugin-release"
+            and item.get("pluginId") == f"{self.tool_name}@company-dev"
+            and item.get("name") == self.tool_name
             and item.get("marketplaceName") == "company-dev"
             and item.get("installed") is True
             and item.get("enabled") is True
@@ -495,7 +525,7 @@ class PluginReleaseAuditor:
         if len(matches) != 1:
             raise DownloadPublicationError("plugin_release_unavailable", "Plugin Release 未安装或未启用")
         version = matches[0]["version"]
-        root = self.codex_home / "plugins" / "cache" / "company-dev" / "plugin-release" / version
+        root = self.codex_home / "plugins" / "cache" / "company-dev" / self.tool_name / version
         manifest = root / ".codex-plugin" / "plugin.json"
         script = root / "scripts" / "release.py"
         if not self._ordinary_directory(root) or not self._ordinary_file(manifest) or not self._ordinary_file(script):
@@ -504,7 +534,7 @@ class PluginReleaseAuditor:
             metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             raise DownloadPublicationError("plugin_release_unavailable", "Plugin Release 安装缓存无效") from None
-        if not isinstance(metadata, dict) or metadata.get("name") != "plugin-release" or metadata.get("version") != version:
+        if not isinstance(metadata, dict) or metadata.get("name") != self.tool_name or metadata.get("version") != version:
             raise DownloadPublicationError("plugin_release_unavailable", "Plugin Release 安装身份不一致")
         return version, script
 
@@ -557,12 +587,14 @@ class PluginReleaseAuditor:
         target: str,
         expected_sha256: str,
         expected_tool_version: str,
+        expected_tool_name: str = "plugin-release",
     ) -> PluginReleaseAudit:
         candidate = payload.get("candidate")
         checks = payload.get("checks")
         valid_header = (
             payload.get("schemaVersion") == "1.0.0"
-            and payload.get("tool") == "plugin-release"
+            and expected_tool_name in {"plugin-release", "plugin-inspector"}
+            and payload.get("tool") == expected_tool_name
             and payload.get("toolVersion") == expected_tool_version
             and payload.get("operation") == "diagnose"
             and payload.get("status") in {"audited", "issues_found"}

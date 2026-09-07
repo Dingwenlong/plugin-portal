@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useModalGuard } from "../PortalModal";
+import { useSaveRecovery } from "../useSaveRecovery";
+import { SaveFeedback } from "../SaveFeedback";
+import { sameContent } from "../requestState";
 
 import type {
   WorkflowDocument,
@@ -13,9 +17,13 @@ type SelectionKind = "tab" | "section" | "step";
 export function WorkflowEditor({
   document,
   onSave,
+  onCheckSaved,
+  onReadLatest,
 }: {
   document: WorkflowDocument;
   onSave: (revision: number, workflow: WorkflowValue) => Promise<unknown>;
+  onCheckSaved?: (workflow: WorkflowValue) => Promise<boolean>;
+  onReadLatest?: () => Promise<WorkflowDocument>;
 }) {
   const [draft, setDraft] = useState<WorkflowValue>(() => ({
     pluginKey: document.pluginKey,
@@ -26,7 +34,10 @@ export function WorkflowEditor({
   const [selectedStepId, setSelectedStepId] = useState(document.tabs[0]?.sections[0]?.steps[0]?.id ?? "");
   const [selectionKind, setSelectionKind] = useState<SelectionKind>(() => initialSelectionKind(document));
   const [focusRequest, setFocusRequest] = useState(0);
-  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(document.revision);
+  const [baseline, setBaseline] = useState(() => ({ pluginKey: document.pluginKey, tabs: structuredClone(document.tabs) }));
+  const recovery = useSaveRecovery(onCheckSaved);
+  useModalGuard(!sameContent(draft, baseline) || recovery.pending, recovery.busy);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const tabIndex = resolveIndex(draft.tabs, selectedTabId);
@@ -144,16 +155,12 @@ export function WorkflowEditor({
   };
 
   const save = async () => {
-    try {
-      setError("");
-      await onSave(document.revision, draft);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法保存流程");
-    }
+    await recovery.run(draft, (frozen) => onSave(revision, frozen));
   };
 
   return (
     <section className="workflow-editor">
+      <fieldset disabled={recovery.busy || recovery.pending}>
       <div className="workflow-editor-layout">
         <section aria-label="流程画布" className="workflow-editor-canvas">
           <div className="workflow-editor-canvas-toolbar">
@@ -277,7 +284,11 @@ export function WorkflowEditor({
       <footer className="workflow-editor-actions">
         <button onClick={save} type="button">保存流程</button>
       </footer>
-      {error ? <p role="alert">{error}</p> : null}
+      </fieldset>
+      <SaveFeedback recovery={recovery} draft={draft} readLatest={onReadLatest} applyLatest={(latest) => {
+        const value = { pluginKey: latest.pluginKey, tabs: structuredClone(latest.tabs) };
+        setDraft(value); setBaseline(structuredClone(value)); setRevision(latest.revision);
+      }} />
     </section>
   );
 }

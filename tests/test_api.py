@@ -5,8 +5,9 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
-from plugin_portal.api import ApiError, PortalApi
+from plugin_portal.api import ApiError, PortalApi, _probe_local_download
 from plugin_portal.download_publication import DownloadPublicationError
 from plugin_portal.storage import PortalStore
 from plugin_portal.uploads import UploadError, UploadRegistry
@@ -68,6 +69,18 @@ class RetryableDownloadPublisher(RecordingDownloadPublisher):
             self.fail_next_publish = False
             raise DownloadPublicationError("publication_failed", "暂时无法发布下载文件")
         return super().publish(candidate)
+
+
+class ExistingDownloadPublisher(RecordingDownloadPublisher):
+    def __init__(self):
+        super().__init__()
+        self.confirmed: list[StubPublicationCandidate] = []
+
+    def publish(self, candidate: StubPublicationCandidate):
+        raise DownloadPublicationError("destination_exists", "相同版本的下载文件已存在")
+
+    def confirm_existing(self, candidate: StubPublicationCandidate) -> None:
+        self.confirmed.append(candidate)
 
 
 class RejectingDownloadPublisher(RecordingDownloadPublisher):
@@ -189,6 +202,68 @@ class PortalApiTests(unittest.TestCase):
             {"available": False, "version": "1.2.3", "href": None},
         )
 
+    def test_download_probe_treats_only_404_as_unavailable(self) -> None:
+        with patch("plugin_portal.api.http.client.HTTPConnection") as connection_factory:
+            response = connection_factory.return_value.getresponse.return_value
+            response.status = 404
+
+            self.assertFalse(
+                _probe_local_download(
+                    "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+                ),
+            )
+
+    def test_download_probe_reports_connection_errors(self) -> None:
+        with patch("plugin_portal.api.http.client.HTTPConnection") as connection_factory:
+            connection_factory.return_value.request.side_effect = ConnectionRefusedError
+
+            with self.assertRaises(ApiError) as failed:
+                _probe_local_download(
+                    "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+                )
+
+        self.assertEqual((failed.exception.status, failed.exception.code), (502, "download_probe_failed"))
+
+    def test_download_probe_reports_timeouts(self) -> None:
+        with patch("plugin_portal.api.http.client.HTTPConnection") as connection_factory:
+            connection_factory.return_value.request.side_effect = TimeoutError
+
+            with self.assertRaises(ApiError) as failed:
+                _probe_local_download(
+                    "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+                )
+
+        self.assertEqual((failed.exception.status, failed.exception.code), (502, "download_probe_failed"))
+
+    def test_download_probe_reports_unexpected_http_status(self) -> None:
+        with patch("plugin_portal.api.http.client.HTTPConnection") as connection_factory:
+            response = connection_factory.return_value.getresponse.return_value
+            response.status = 500
+
+            with self.assertRaises(ApiError) as failed:
+                _probe_local_download(
+                    "http://127.0.0.1:9134/downloads/sample-plugin-1.2.3-company-dev.zip",
+                )
+
+        self.assertEqual((failed.exception.status, failed.exception.code), (502, "download_probe_failed"))
+
+    def test_download_info_preserves_a_structured_probe_failure(self) -> None:
+        preview = self.preview()
+        self.api.promote(
+            self.token,
+            "company-dev/sample-plugin",
+            {"candidateId": preview["candidateId"], "expectedRevision": 0},
+        )
+
+        def failed_probe(_url: str) -> bool:
+            raise ApiError("无法确认下载文件状态", status=502, code="download_probe_failed")
+
+        api = PortalApi(self.store, download_probe=failed_probe)
+        with self.assertRaises(ApiError) as failed:
+            api.get_download_info("company-dev/sample-plugin")
+
+        self.assertEqual((failed.exception.status, failed.exception.code), (502, "download_probe_failed"))
+
     def test_plugin_icon_uses_a_generic_image_when_the_plugin_has_no_public_logo(self) -> None:
         preview = self.preview()
         self.api.promote(
@@ -263,7 +338,7 @@ class PortalApiTests(unittest.TestCase):
 
         self.assertEqual(unsafe.exception.code, "plugin_preview_failed")
 
-    def test_remote_upload_preview_retries_projection_and_consumes_on_success(self) -> None:
+    def test_remote_upload_preview_retries_projection_and_retains_zip_for_confirmation(self) -> None:
         upload_root = self.root / "uploads"
         registry = UploadRegistry(root=upload_root)
         remote = PortalApi(self.store, access_mode="remote-management", upload_registry=registry)
@@ -301,9 +376,152 @@ class PortalApiTests(unittest.TestCase):
         self.assertNotIn(str(upload_root), public_preview)
         self.assertNotIn(uploaded["uploadId"], public_preview)
         self.assertNotIn('"source"', public_preview)
+        self.assertTrue(registry.require(token, "plugin-import", uploaded["uploadId"]).path.exists())
+        self.assertEqual(list(upload_root.glob("*-extracted")), [])
+
+    def test_remote_zip_confirmation_publishes_the_same_upload_then_consumes_it(self) -> None:
+        registry = UploadRegistry(root=self.root / "remote-import-uploads")
+        publisher = RecordingDownloadPublisher()
+        remote = PortalApi(
+            self.store,
+            access_mode="remote-management",
+            upload_registry=registry,
+            download_publisher=publisher,
+        )
+        self.addCleanup(remote.close)
+        token = remote.create_session()["token"]
+        archive = self.plugin_zip()
+        with archive.open("rb") as source:
+            uploaded = remote.stage_upload(
+                token, "plugin-import", archive.name, source, archive.stat().st_size,
+            )
+        staged = registry.require(token, "plugin-import", uploaded["uploadId"])
+        preview = remote.preview_import(token, {
+            "source": {"kind": "upload", "uploadId": uploaded["uploadId"]},
+            "target": "company-dev",
+            "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"],
+            "extensionTools": [],
+        })
+
+        promoted = remote.promote(token, "company-dev/sample-plugin", {
+            "candidateId": preview["candidateId"], "expectedRevision": 0,
+        })
+
+        self.assertEqual(promoted["revision"], 1)
+        self.assertEqual(publisher.previews, [(staged.path, "company-dev/sample-plugin", "1.2.3")])
+        self.assertEqual([candidate.source_path for candidate in publisher.published], [staged.path])
+        self.assertFalse(staged.path.exists())
         with self.assertRaises(UploadError):
             registry.require(token, "plugin-import", uploaded["uploadId"])
-        self.assertEqual(list(upload_root.glob("*-extracted")), [])
+        self.assertEqual(remote.list_plugins()["items"][0]["version"], "1.2.3")
+
+    def test_remote_zip_publication_failure_keeps_candidate_and_catalog_for_retry(self) -> None:
+        registry = UploadRegistry(root=self.root / "retry-import-uploads")
+        publisher = RetryableDownloadPublisher()
+        remote = PortalApi(
+            self.store,
+            access_mode="remote-management",
+            upload_registry=registry,
+            download_publisher=publisher,
+        )
+        self.addCleanup(remote.close)
+        token = remote.create_session()["token"]
+        archive = self.plugin_zip()
+        with archive.open("rb") as source:
+            uploaded = remote.stage_upload(
+                token, "plugin-import", archive.name, source, archive.stat().st_size,
+            )
+        preview = remote.preview_import(token, {
+            "source": {"kind": "upload", "uploadId": uploaded["uploadId"]},
+            "target": "company-dev",
+            "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"],
+            "extensionTools": [],
+        })
+
+        with self.assertRaises(ApiError) as failed:
+            remote.promote(token, "company-dev/sample-plugin", {
+                "candidateId": preview["candidateId"], "expectedRevision": 0,
+            })
+
+        self.assertEqual(failed.exception.code, "publication_failed")
+        self.assertEqual(remote.list_plugins(), {"revision": 0, "items": []})
+        self.assertTrue(registry.require(token, "plugin-import", uploaded["uploadId"]).path.exists())
+
+        promoted = remote.promote(token, "company-dev/sample-plugin", {
+            "candidateId": preview["candidateId"], "expectedRevision": 0,
+        })
+
+        self.assertEqual(promoted["revision"], 1)
+        self.assertFalse((registry.root / f'{uploaded["uploadId"]}.zip').exists())
+
+    def test_remote_zip_confirmation_accepts_an_identical_existing_download(self) -> None:
+        registry = UploadRegistry(root=self.root / "existing-import-uploads")
+        publisher = ExistingDownloadPublisher()
+        remote = PortalApi(
+            self.store,
+            access_mode="remote-management",
+            upload_registry=registry,
+            download_publisher=publisher,
+        )
+        self.addCleanup(remote.close)
+        token = remote.create_session()["token"]
+        archive = self.plugin_zip()
+        with archive.open("rb") as source:
+            uploaded = remote.stage_upload(
+                token, "plugin-import", archive.name, source, archive.stat().st_size,
+            )
+        preview = remote.preview_import(token, {
+            "source": {"kind": "upload", "uploadId": uploaded["uploadId"]},
+            "target": "company-dev",
+            "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"],
+            "extensionTools": [],
+        })
+
+        promoted = remote.promote(token, "company-dev/sample-plugin", {
+            "candidateId": preview["candidateId"], "expectedRevision": 0,
+        })
+
+        self.assertEqual(promoted["revision"], 1)
+        self.assertEqual(len(publisher.confirmed), 1)
+        self.assertEqual(publisher.confirmed[0].source_path.name, f'{uploaded["uploadId"]}.zip')
+        self.assertFalse((registry.root / f'{uploaded["uploadId"]}.zip').exists())
+
+    def test_remote_zip_revision_conflict_is_rejected_before_publication(self) -> None:
+        registry = UploadRegistry(root=self.root / "conflict-import-uploads")
+        publisher = RecordingDownloadPublisher()
+        remote = PortalApi(
+            self.store,
+            access_mode="remote-management",
+            upload_registry=registry,
+            download_publisher=publisher,
+        )
+        self.addCleanup(remote.close)
+        token = remote.create_session()["token"]
+        archive = self.plugin_zip()
+        with archive.open("rb") as source:
+            uploaded = remote.stage_upload(
+                token, "plugin-import", archive.name, source, archive.stat().st_size,
+            )
+        preview = remote.preview_import(token, {
+            "source": {"kind": "upload", "uploadId": uploaded["uploadId"]},
+            "target": "company-dev",
+            "expectedPluginId": "sample-plugin",
+            "approvedRulePaths": ["rules/public.md"],
+            "extensionTools": [],
+        })
+
+        with self.assertRaises(ApiError) as conflict:
+            remote.promote(token, "company-dev/sample-plugin", {
+                "candidateId": preview["candidateId"], "expectedRevision": 1,
+            })
+
+        self.assertEqual(conflict.exception.code, "revision_conflict")
+        self.assertEqual(publisher.previews, [])
+        self.assertEqual(publisher.published, [])
+        self.assertTrue(registry.require(token, "plugin-import", uploaded["uploadId"]).path.exists())
 
     def test_upload_source_is_session_scoped_and_mode_restricted(self) -> None:
         registry = UploadRegistry(root=self.root / "uploads")

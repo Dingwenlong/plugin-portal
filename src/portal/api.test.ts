@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PortalClient } from "./api";
 
 describe("PortalClient", () => {
+  it("ends a stalled read after fifteen seconds and retains structured errors", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new PortalClient(() => new Promise(() => undefined));
+      const result = client.listPlugins().catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await Promise.race([result, Promise.resolve("still pending")])).toMatchObject({ code: "request_timeout" });
+      const rejected = new PortalClient(async () => Response.json(
+        { error: { code: "revision_conflict", message: "资料已更新" } }, { status: 409 },
+      ));
+      await expect(rejected.listPlugins()).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
+    } finally { vi.useRealTimers(); }
+  });
   it("validates the server-owned access mode", async () => {
     for (const access of [
       { readOnly: false, fileSelectionMode: "server-picker" },

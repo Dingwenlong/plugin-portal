@@ -38,10 +38,15 @@ export async function startIsolatedHttpsProxy(
   const configPath = join(root, "Caddyfile");
   mkdirSync(storageRoot, { recursive: true });
   const caddyPath = (value: string) => value.replaceAll("\\", "/").replaceAll('"', '\\"');
+  // Match the production h1/h2-only listener; a reserved TCP test port does not
+  // also reserve UDP for Caddy's otherwise automatic HTTP/3 listener.
   writeFileSync(configPath, `{
   admin off
   auto_https disable_redirects
   skip_install_trust
+  servers {
+    protocols h1 h2
+  }
   storage file_system {
     root "${caddyPath(storageRoot)}"
   }

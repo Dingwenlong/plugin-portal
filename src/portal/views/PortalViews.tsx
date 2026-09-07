@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { PortalModal } from "../PortalModal";
+import { ModalCancelButton, PortalModal } from "../PortalModal";
+import { useSaveRecovery } from "../useSaveRecovery";
+import { SaveFeedback } from "../SaveFeedback";
 import { PortalPageAction } from "../PortalPageAction";
 import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } from "../types";
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
@@ -142,16 +144,23 @@ export function PromptsView({
   document,
   onSave,
   readOnly = false,
+  onCheckSaved,
+  onReadLatest,
+  onApplyLatest,
 }: {
   document: PromptDocument;
   onSave: (revision: number, items: PromptItem[]) => Promise<unknown>;
   readOnly?: boolean;
+  onCheckSaved?: (items: PromptItem[]) => Promise<boolean>;
+  onReadLatest?: () => Promise<PromptDocument>;
+  onApplyLatest?: (document: PromptDocument) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [scenario, setScenario] = useState("");
   const [content, setContent] = useState("");
   const [editingId, setEditingId] = useState<string | undefined>();
-  const [error, setError] = useState("");
+  const [baseline, setBaseline] = useState(document);
+  const [initialFields, setInitialFields] = useState({ scenario: "", content: "" });
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const closeForm = () => {
@@ -161,10 +170,12 @@ export function PromptsView({
     setContent("");
     triggerRef.current?.focus();
   };
+  const recovery = useSaveRecovery(onCheckSaved, closeForm);
+  const locked = recovery.busy || recovery.pending;
 
   const save = async () => {
-    const id = editingId ?? uniquePromptId(document.items);
-    const existing = document.items.find((item) => item.id === editingId);
+    const id = editingId ?? uniquePromptId(baseline.items);
+    const existing = baseline.items.find((item) => item.id === editingId);
     const nextItem = {
       id,
       scenario: scenario.trim(),
@@ -172,15 +183,16 @@ export function PromptsView({
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
     const next = editingId
-      ? document.items.map((item) => item.id === editingId ? nextItem : item)
-      : [...document.items, nextItem];
-    try {
-      setError("");
-      await onSave(document.revision, next);
-      closeForm();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法保存 Prompt");
+      ? baseline.items.map((item) => item.id === editingId ? nextItem : item)
+      : [...baseline.items, nextItem];
+    await recovery.run(next, (frozen) => onSave(baseline.revision, frozen));
+  };
+  const applyLatest = (latest: PromptDocument) => {
+    if (editingId && !latest.items.some((item) => item.id === editingId)) {
+      throw new Error("这条 Prompt 已被删除。请复制草稿，关闭后作为新 Prompt 添加。");
     }
+    setBaseline(structuredClone(latest));
+    onApplyLatest?.(latest);
   };
 
   return (
@@ -190,40 +202,40 @@ export function PromptsView({
           {document.items.map((item) => <tr key={item.id}>
             <td>{item.scenario}</td><td>{item.content}</td><td>{formatPromptTime(item.createdAt)}</td>
             {!readOnly && <td className="row-actions">
-              <button aria-label={`编辑 ${item.scenario}`} onClick={() => {
+              <button disabled={locked} aria-label={`编辑 ${item.scenario}`} onClick={(event) => {
+                triggerRef.current = event.currentTarget;
+                setBaseline(structuredClone(document)); setInitialFields({ scenario: item.scenario, content: item.content });
                 setEditingId(item.id); setScenario(item.scenario); setContent(item.content); setShowForm(true);
               }} type="button">编辑</button>
-              <button aria-label={`删除 ${item.scenario}`} onClick={async () => {
-                try {
-                  setError("");
-                  await onSave(document.revision, document.items.filter((candidate) => candidate.id !== item.id));
-                } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : "无法删除 Prompt");
-                }
+              <button disabled={locked} aria-label={`删除 ${item.scenario}`} onClick={async () => {
+                await recovery.run(document.items.filter((candidate) => candidate.id !== item.id), (frozen) => onSave(document.revision, frozen));
               }} type="button">删除</button>
             </td>}
           </tr>)}
         </ContentTable>
       )}
       {!readOnly && <PortalPageAction>
-        <button aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={() => { setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} title="新增 Prompt" type="button">
+        <button disabled={locked} aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={(event) => { triggerRef.current = event.currentTarget; setBaseline(structuredClone(document)); setInitialFields({ scenario: "", content: "" }); setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} title="新增 Prompt" type="button">
           <Plus aria-hidden="true" size={17} />
           <span className="portal-action-label">新增 Prompt</span>
         </button>
       </PortalPageAction>}
       {!readOnly && showForm ? (
-        <PortalModal onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
+        <PortalModal returnFocusRef={triggerRef} busy={recovery.busy} dirty={scenario !== initialFields.scenario || content !== initialFields.content || recovery.pending} onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
           <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <fieldset disabled={locked} className="edit-form">
             <label>常用场景<input aria-label="常用场景" data-autofocus value={scenario} onChange={(event) => setScenario(event.currentTarget.value)} /></label>
             <label>Prompt 内容<textarea aria-label="Prompt 内容" value={content} onChange={(event) => setContent(event.currentTarget.value)} /></label>
             <footer className="modal-actions">
-              <button onClick={closeForm} type="button">取消</button>
+              <ModalCancelButton />
               <button disabled={!scenario.trim() || !content.trim()} type="submit">保存</button>
             </footer>
+            </fieldset>
           </form>
+          <SaveFeedback recovery={recovery} draft={recovery.frozen ?? { scenario, content }} readLatest={onReadLatest} applyLatest={applyLatest} />
         </PortalModal>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {!showForm && <SaveFeedback recovery={recovery} draft={recovery.frozen ?? document.items} readLatest={onReadLatest} applyLatest={onApplyLatest} />}
     </section>
   );
 }

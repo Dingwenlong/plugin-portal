@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "python": { "path": "C:\\PortalRuntime\\python.exe", "sha256": "replace-with-verified-sha256" },
+  "server": { "path": "C:\\PortalDownloads\\runtime\\download-server.py", "sha256": "replace-with-verified-sha256" },
+  "supervisor": { "path": "C:\\PortalDownloads\\runtime\\portal-supervisor.ps1", "sha256": "replace-with-verified-sha256" },
+  "shareRoot": "C:\\PortalPublishedShare",
+  "logRoot": "C:\\PortalDownloads\\logs",
+  "port": 9136,
+  "maxRestarts": 2,
+  "restartDelaySeconds": 3
+}

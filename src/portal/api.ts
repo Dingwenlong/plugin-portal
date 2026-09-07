@@ -18,14 +18,17 @@ import type {
 } from "./types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+import { PortalRequestError } from "./requestState";
+export { PortalRequestError } from "./requestState";
 
 export class PortalClient {
   private sessionToken: string | undefined;
+  private sessionRequest: Promise<string> | undefined;
 
   constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
 
-  async getAccessMode(): Promise<PortalAccess> {
-    const value = await this.request("/api/access");
+  async getAccessMode(signal?: AbortSignal): Promise<PortalAccess> {
+    const value = await this.request("/api/access", { signal });
     if (
       !isClosedRecord(value, ["readOnly", "fileSelectionMode"])
       || typeof value.readOnly !== "boolean"
@@ -37,20 +40,20 @@ export class PortalClient {
     return value as unknown as PortalAccess;
   }
 
-  async listPlugins(): Promise<PluginCatalog> {
-    const value = await this.request("/api/plugins");
+  async listPlugins(signal?: AbortSignal): Promise<PluginCatalog> {
+    const value = await this.request("/api/plugins", { signal });
     if (!isPluginCatalog(value)) throw new Error("插件目录回应无效");
     return value;
   }
 
-  async getSnapshot(pluginKey: string): Promise<PluginSnapshot> {
-    const value = await this.request(this.pluginUrl(pluginKey, "snapshot"));
+  async getSnapshot(pluginKey: string, signal?: AbortSignal): Promise<PluginSnapshot> {
+    const value = await this.request(this.pluginUrl(pluginKey, "snapshot"), { signal });
     if (!isPluginSnapshot(value)) throw new Error("插件公开资料回应无效");
     return value;
   }
 
-  async getDownloadInfo(pluginKey: string): Promise<PluginDownloadInfo> {
-    const value = await this.request(this.pluginUrl(pluginKey, "download-info"));
+  async getDownloadInfo(pluginKey: string, signal?: AbortSignal): Promise<PluginDownloadInfo> {
+    const value = await this.request(this.pluginUrl(pluginKey, "download-info"), { signal });
     if (
       !isClosedRecord(value, ["available", "version", "href"]) ||
       typeof value.available !== "boolean" ||
@@ -65,7 +68,7 @@ export class PortalClient {
   }
 
   async previewImport(config: PluginImportConfig): Promise<PluginImportCandidate> {
-    const value = await this.mutate("/api/plugins/import/preview", config);
+    const value = await this.mutate("/api/plugins/import/preview", config, 300_000);
     if (
       !isClosedRecord(value, ["candidateId", "pluginKey", "snapshot"]) ||
       !isText(value.candidateId) ||
@@ -78,7 +81,7 @@ export class PortalClient {
   }
 
   async selectPluginDirectory(): Promise<PluginDirectorySelection> {
-    const value = await this.mutate("/api/plugins/import/select-directory", {});
+    const value = await this.mutate("/api/plugins/import/select-directory", {}, 0);
     if (isClosedRecord(value, ["selected"]) && value.selected === false) {
       return { selected: false };
     }
@@ -106,7 +109,7 @@ export class PortalClient {
   }
 
   async selectDownloadCandidate(pluginKey: string): Promise<DownloadCandidateSelection> {
-    const value = await this.mutate(this.pluginUrl(pluginKey, "download-publication/select"), {});
+    const value = await this.mutate(this.pluginUrl(pluginKey, "download-publication/select"), {}, 0);
     if (isDownloadCandidateSelection(value, pluginKey)) return value;
     throw new Error("下载发布选择回应无效");
   }
@@ -126,7 +129,7 @@ export class PortalClient {
   ): Promise<DownloadPublicationReceipt> {
     const value = await this.mutate(this.pluginUrl(pluginKey, "download-publication/confirm"), {
       publicationId,
-    });
+    }, 300_000);
     if (
       !isClosedRecord(value, [
         "pluginKey",
@@ -141,7 +144,7 @@ export class PortalClient {
       !isSha256(value.candidateSha256) ||
       !isPositiveInteger(value.archiveBytes)
     ) {
-      throw new Error("下载发布确认回应无效");
+      throw new PortalRequestError("下载发布确认回应无效，结果待确认", "invalid_response", 200, true);
     }
     return value as unknown as DownloadPublicationReceipt;
   }
@@ -150,7 +153,7 @@ export class PortalClient {
     return this.mutationReceipt(await this.mutate(this.pluginUrl(pluginKey, "promote"), {
       expectedRevision: revision,
       candidateId,
-    }), pluginKey);
+    }, 300_000), pluginKey);
   }
 
   async rollback(pluginKey: string, revision: number): Promise<PluginMutationReceipt> {
@@ -159,8 +162,8 @@ export class PortalClient {
     }), pluginKey);
   }
 
-  async getPrompts(pluginKey: string): Promise<PromptDocument> {
-    const value = await this.request(this.pluginUrl(pluginKey, "prompts"));
+  async getPrompts(pluginKey: string, signal?: AbortSignal): Promise<PromptDocument> {
+    const value = await this.request(this.pluginUrl(pluginKey, "prompts"), { signal });
     if (!isPromptDocument(value, pluginKey)) throw new Error("Prompts 回应无效");
     return value;
   }
@@ -173,13 +176,13 @@ export class PortalClient {
     const value = await this.mutate(this.pluginUrl(pluginKey, "prompts"), {
       expectedRevision: revision,
       items,
-    });
-    if (!isPromptDocument(value, pluginKey)) throw new Error("Prompts 回应无效");
+    }, 30_000, true);
+    if (!isPromptDocument(value, pluginKey)) throw new PortalRequestError("Prompts 回应无效，结果待确认", "invalid_response", 200, true);
     return value;
   }
 
-  async getWorkflows(pluginKey: string): Promise<WorkflowDocument> {
-    const value = await this.request(this.pluginUrl(pluginKey, "workflows"));
+  async getWorkflows(pluginKey: string, signal?: AbortSignal): Promise<WorkflowDocument> {
+    const value = await this.request(this.pluginUrl(pluginKey, "workflows"), { signal });
     if (!isWorkflowDocument(value, pluginKey)) throw new Error("流程回应无效");
     return value;
   }
@@ -192,8 +195,8 @@ export class PortalClient {
     const value = await this.mutate(this.pluginUrl(pluginKey, "workflows"), {
       expectedRevision: revision,
       workflow,
-    });
-    if (!isWorkflowDocument(value, pluginKey)) throw new Error("流程回应无效");
+    }, 30_000, true);
+    if (!isWorkflowDocument(value, pluginKey)) throw new PortalRequestError("流程回应无效，结果待确认", "invalid_response", 200, true);
     return value;
   }
 
@@ -201,18 +204,31 @@ export class PortalClient {
     return `/api/plugins/${encodeURIComponent(pluginKey)}/${resource}`;
   }
 
-  private async mutate(path: string, body: unknown): Promise<unknown> {
+  private async mutate(path: string, body: unknown, timeout = 30_000, renewSession = false): Promise<unknown> {
+    const frozen = JSON.stringify(body);
+    return this.sendMutation(path, frozen, timeout, renewSession);
+  }
+
+  private async sendMutation(path: string, body: string, timeout: number, renewSession: boolean): Promise<unknown> {
     const token = await this.getSessionToken();
-    return this.request(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Portal-Session": token },
-      body: JSON.stringify(body),
-    });
+    try {
+      return await this.request(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Portal-Session": token },
+        body,
+      }, timeout);
+    } catch (error) {
+      if (error instanceof PortalRequestError && error.status === 401 && error.code === "invalid_session") {
+        if (this.sessionToken === token) this.sessionToken = undefined;
+        if (renewSession) return this.sendMutation(path, body, timeout, false);
+      }
+      throw error;
+    }
   }
 
   private async mutateBinary(path: string, file: File): Promise<unknown> {
     const token = await this.getSessionToken();
-    return this.request(path, {
+    try { return await this.request(path, {
       method: "POST",
       headers: {
         "Content-Type": "application/zip",
@@ -220,11 +236,20 @@ export class PortalClient {
         "X-Portal-Session": token,
       },
       body: file,
-    });
+    }, 300_000); } catch (error) {
+      if (error instanceof PortalRequestError && error.status === 401 && error.code === "invalid_session" && this.sessionToken === token) this.sessionToken = undefined;
+      throw error;
+    }
   }
 
   private async getSessionToken(): Promise<string> {
     if (this.sessionToken) return this.sessionToken;
+    if (this.sessionRequest) return this.sessionRequest;
+    this.sessionRequest = this.createSession();
+    try { return await this.sessionRequest; } finally { this.sessionRequest = undefined; }
+  }
+
+  private async createSession(): Promise<string> {
     const value = await this.request("/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -237,19 +262,44 @@ export class PortalClient {
     return value.token;
   }
 
-  private async request(path: string, init?: RequestInit): Promise<unknown> {
-    const response = await this.fetcher(path, init);
-    let value: unknown;
+  private async request(path: string, init?: RequestInit, timeout = 15_000): Promise<unknown> {
+    const controller = new AbortController();
+    const write = init?.method === "POST" && path !== "/api/session";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let rejectAbort: (reason: unknown) => void = () => undefined;
+    const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+    const cancel = () => {
+      controller.abort();
+      rejectAbort(new PortalRequestError("请求已取消", "request_aborted", undefined, write));
+    };
+    init?.signal?.addEventListener("abort", cancel, { once: true });
+    if (init?.signal?.aborted) cancel();
+    if (timeout > 0) timer = setTimeout(() => {
+      rejectAbort(new PortalRequestError(write ? "请求超时，结果待确认" : "读取超时，请重试", "request_timeout", undefined, write));
+      controller.abort();
+    }, timeout);
     try {
-      value = await response.json();
-    } catch {
-      throw new Error("Portal 回应不是有效 JSON");
+      const operation = async () => {
+        if (controller.signal.aborted) return aborted;
+        const response = await this.fetcher(path, { ...init, signal: controller.signal });
+        let value: unknown;
+        try { value = await response.json(); } catch {
+          throw new PortalRequestError("Portal 回应不是有效 JSON", "invalid_response", response.status, write);
+        }
+        if (!response.ok) {
+          const detail = readApiError(value);
+          throw new PortalRequestError(detail?.message ?? `Portal 请求失败（${response.status}）`, detail?.code ?? "http_error", response.status, write && !detail);
+        }
+        return value;
+      };
+      return await Promise.race([operation(), aborted]);
+    } catch (error) {
+      if (error instanceof PortalRequestError) throw error;
+      throw new PortalRequestError(write ? "连接中断，结果待确认" : "无法连接 Portal，请重试", "network_error", undefined, write);
+    } finally {
+      clearTimeout(timer);
+      init?.signal?.removeEventListener("abort", cancel);
     }
-    if (!response.ok) {
-      const message = readApiError(value);
-      throw new Error(message ?? `Portal 请求失败（${response.status}）`);
-    }
-    return value;
   }
 
   private mutationReceipt(value: unknown, pluginKey: string): PluginMutationReceipt {
@@ -259,17 +309,17 @@ export class PortalClient {
       value.pluginKey !== pluginKey ||
       !isText(value.snapshotId)
     ) {
-      throw new Error("插件变更回应无效");
+      throw new PortalRequestError("插件变更回应无效，结果待确认", "invalid_response", 200, true);
     }
     return value as unknown as PluginMutationReceipt;
   }
 }
 
-function readApiError(value: unknown): string | undefined {
+function readApiError(value: unknown): { code: string; message: string } | undefined {
   if (!isClosedRecord(value, ["error"]) || !isClosedRecord(value.error, ["code", "message"])) {
     return undefined;
   }
-  return isText(value.error.message) ? value.error.message : undefined;
+  return isText(value.error.message) && isText(value.error.code) ? { code: value.error.code, message: value.error.message } : undefined;
 }
 
 function isPluginCatalog(value: unknown): value is PluginCatalog {

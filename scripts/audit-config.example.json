@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "codexHome": "C:/PortalDependencies/codex-home",
+  "codex": {"path": "C:/PortalDependencies/codex.exe", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "python": {"path": "C:/PortalDependencies/python/python.exe", "sha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"},
+  "pluginInspector": {
+    "root": "C:/PortalDependencies/plugin-inspector/1.0.0",
+    "version": "1.0.0",
+    "manifestSha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256",
+    "scriptSha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256",
+    "treeSha256": "REPLACE_WITH_VERIFIED_LOWERCASE_SHA256"
+  }
+}

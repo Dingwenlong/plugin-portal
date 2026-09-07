@@ -144,7 +144,7 @@ describe("HubEntry plugin icons", () => {
       .toHaveAttribute("src", "/api/plugins/company-dev%2Fyusheng-inc/icon?revision=3");
   });
 
-  it("offers local download publication, hides it in read-only mode, and restores trigger focus", async () => {
+  it("does not expose a second download-publication action after inclusion", () => {
     const publicationClient = {
       selectPluginDirectory: vi.fn(),
       previewImport: vi.fn(),
@@ -153,27 +153,14 @@ describe("HubEntry plugin icons", () => {
       selectDownloadCandidate: vi.fn().mockResolvedValue({ selected: false as const }),
       confirmDownloadPublication: vi.fn(),
     };
-    const { rerender } = render(<HubEntry
+    render(<HubEntry
       catalog={catalog}
       client={publicationClient}
-      route="hub"
-      onNavigate={vi.fn()}
-      onCatalogChanged={vi.fn()}
-    />);
-    const trigger = screen.getByRole("button", { name: "发布 昱胜 Inc 下载" });
-    fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "发布 昱胜 Inc 下载" })).toBeVisible();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    await waitFor(() => expect(trigger).toHaveFocus());
-
-    rerender(<HubEntry
-      catalog={catalog}
-      client={publicationClient}
-      readOnly
       route="hub"
       onNavigate={vi.fn()}
       onCatalogChanged={vi.fn()}
     />);
     expect(screen.queryByRole("button", { name: /发布 .* 下载/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("发布下载")).not.toBeInTheDocument();
   });
 });

@@ -53,15 +53,7 @@ test("removes conventional borders from Hub, plugin pages, overlays and compact 
     await expect(page.getByRole("dialog", { name: "纳入插件" })).toBeVisible();
     await expectNoConventionalBorders(page, `${theme} inclusion dialog`);
     await page.getByRole("dialog", { name: "纳入插件" }).getByRole("button", { name: "关闭" }).click();
-
-    await page.getByRole("button", { name: "发布 研发助手插件 下载" }).click();
-    const publication = page.getByRole("dialog", { name: "发布 研发助手插件 下载" });
-    await expect(publication).toBeVisible();
-    await expectNoConventionalBorders(page, `${theme} download dialog`);
-    await publication.getByRole("button", { name: "选择候选 ZIP" }).click();
-    await expect(publication.getByRole("button", { name: "确认发布" })).toBeVisible();
-    await expectNoConventionalBorders(page, `${theme} download preview`);
-    await publication.getByRole("button", { name: "关闭" }).click();
+    await expect(page.getByRole("button", { name: /发布 .* 下载/ })).toHaveCount(0);
 
     for (const section of pluginPages) {
       await openPlugin(page, section);

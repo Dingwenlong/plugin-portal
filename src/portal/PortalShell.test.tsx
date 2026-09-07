@@ -66,9 +66,6 @@ function createClient(): PortalDataClient {
     saveWorkflows: async (_pluginKey, _revision, workflow) => ({ revision: 1, ...workflow }),
     selectPluginDirectory: async () => ({ selected: false }),
     uploadPluginArchive: async () => { throw new Error("not used"); },
-    selectDownloadCandidate: async () => ({ selected: false }),
-    uploadDownloadCandidate: async () => { throw new Error("not used"); },
-    confirmDownloadPublication: async () => { throw new Error("not used"); },
     previewImport: async () => { throw new Error("not used"); },
     promote: async () => { throw new Error("not used"); },
     rollback: async () => { throw new Error("not used"); },
@@ -76,6 +73,36 @@ function createClient(): PortalDataClient {
 }
 
 describe("PortalShell", () => {
+  it("keeps navigation when one resource fails and retries only that resource", async () => {
+    const client = createClient();
+    const snapshot = vi.spyOn(client, "getSnapshot");
+    const prompts = vi.spyOn(client, "getPrompts").mockRejectedValueOnce(new Error("Prompts 暂不可用"));
+    render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/prompts" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Prompts 暂不可用");
+    expect(screen.getByRole("banner", { name: "插件导航" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试读取" }));
+    expect(await screen.findByText("研发 Prompt")).toBeInTheDocument();
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(prompts).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not describe a failed download check as a missing download", async () => {
+    const client = createClient();
+    vi.spyOn(client, "getDownloadInfo").mockRejectedValueOnce(new Error("下载服务暂不可用"));
+    render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/skills" />);
+    const retry = await screen.findByRole("button", { name: "重新检查下载" });
+    expect(retry).not.toBeDisabled();
+    fireEvent.click(retry);
+    expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
+  });
+
+  it("distinguishes an initial Hub read from an empty catalog", () => {
+    const client = createClient();
+    client.listPlugins = () => new Promise(() => undefined);
+    render(<PortalShell client={client} initialHash="#/hub" />);
+    expect(screen.getByText("正在读取插件…")).toBeInTheDocument();
+    expect(screen.queryByText("尚未纳入插件")).not.toBeInTheDocument();
+  });
   beforeEach(() => window.localStorage.clear());
   afterEach(() => {
     window.localStorage.clear();
@@ -142,7 +169,8 @@ describe("PortalShell", () => {
     const toggle = within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为浅色" });
     act(() => toggle.focus());
     fireEvent.click(toggle);
-    expect(toggle).toHaveFocus();
+    expect(toggle).not.toHaveFocus();
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
     expect(window.scrollY).toBe(160);
     expect(screen.getByRole("main", { name: "Prompts" })).toBe(main);
     expect(screen.getByLabelText("常用场景")).toBe(draft);
@@ -232,7 +260,7 @@ describe("PortalShell", () => {
     expect(screen.queryByRole("dialog", { name: "纳入插件" })).not.toBeInTheDocument();
   });
 
-  it("passes remote browser-upload capability to Hub management without hiding actions", async () => {
+  it("passes remote browser-upload capability to Hub management without a second publish action", async () => {
     const client = createClient();
     client.getAccessMode = async () => ({ readOnly: false, fileSelectionMode: "browser-upload" });
     render(<PortalShell client={client} initialHash="#/hub" />);
@@ -240,7 +268,7 @@ describe("PortalShell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "纳入插件" }));
     expect(screen.getByLabelText("插件 ZIP")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "选择插件目录" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /发布 .* 下载/ })).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /发布 .* 下载/ })).not.toBeInTheDocument();
   });
 
   it("refreshes the Hub catalog revision and plugin icon after remote inclusion", async () => {
@@ -600,7 +628,7 @@ describe("PortalShell", () => {
 
     render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/overview" />);
 
-    expect(await screen.findByRole("button", { name: "下载最新版 v3.7.17" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "正在检查下载" })).toBeDisabled();
     resolveDownload({
       available: true,
       version: "3.7.17",

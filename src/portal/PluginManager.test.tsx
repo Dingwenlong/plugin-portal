@@ -25,6 +25,19 @@ const candidate = {
 };
 
 describe("PluginManager", () => {
+  it("does not offer promotion again when only the catalog refresh failed", async () => {
+    const promote = vi.fn().mockResolvedValue({ revision: 1, pluginKey: candidate.pluginKey, snapshotId: "a".repeat(64) });
+    const onChanged = vi.fn().mockRejectedValueOnce(new Error("目录读取失败")).mockResolvedValue(undefined);
+    const client = { selectPluginDirectory: vi.fn().mockResolvedValue({ selected: true, path: "fixtures/plugin" }), previewImport: vi.fn().mockResolvedValue(candidate), promote, rollback: vi.fn() };
+    render(<PluginManager catalogRevision={0} client={client} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "选择插件目录" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认纳入" }));
+    expect(await screen.findByText(/已纳入，列表刷新失败/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认纳入" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+    expect(promote).toHaveBeenCalledTimes(1);
+  });
   it("selects a plugin directory, detects identity, and promotes only after confirmation", async () => {
     const previewImport = vi.fn().mockResolvedValue(candidate);
     const selectPluginDirectory = vi.fn().mockResolvedValue({
@@ -119,6 +132,7 @@ describe("PluginManager", () => {
     />);
 
     expect(screen.queryByRole("button", { name: "选择插件目录" })).not.toBeInTheDocument();
+    expect(screen.getByText(/确认后纳入 Portal 并发布下载/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("插件 ZIP"), { target: { files: [file] } });
 
     await waitFor(() => expect(uploadPluginArchive).toHaveBeenCalledWith(file));

@@ -357,6 +357,25 @@ class DownloadPublisherTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "destination_exists")
         self.assertEqual(destination.read_bytes(), b"existing")
 
+    def test_confirms_an_existing_public_version_only_when_its_bytes_match(self) -> None:
+        publisher = self.publisher()
+        candidate = publisher.preview(
+            self.candidate_path,
+            plugin_key="company-dev/sample-plugin",
+            expected_version="1.2.3",
+        )
+        destination = self.download_root / candidate.destination_file_name
+        destination.write_bytes(self.candidate_bytes)
+
+        publisher.confirm_existing(candidate)
+
+        destination.write_bytes(b"different")
+        from plugin_portal.download_publication import DownloadPublicationError
+
+        with self.assertRaises(DownloadPublicationError) as mismatch:
+            publisher.confirm_existing(candidate)
+        self.assertEqual(mismatch.exception.code, "destination_exists")
+
     def test_rejects_a_source_changed_after_preview_without_activating_it(self) -> None:
         publisher = self.publisher()
         candidate = publisher.preview(

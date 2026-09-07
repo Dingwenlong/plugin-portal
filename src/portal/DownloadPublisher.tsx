@@ -84,7 +84,7 @@ export function DownloadPublisherDialog({
   return (
     <PortalModal title={`发布 ${plugin.name} 下载`} onClose={onClose}>
       <div className="download-publication">
-        <p>选择由该插件自身发布流程生成的 ZIP。Portal 会先交给 Plugin Release 只读审计，不会生成或修改候选。</p>
+        <p>选择由该插件自身发布流程生成的 ZIP。Portal 会先交给配置的工具只读审计，不会生成或修改候选。</p>
         {fileSelectionMode === "browser-upload" && !receipt ? <label className="download-publication-file">
           下载候选 ZIP
           <input
@@ -116,7 +116,7 @@ export function DownloadPublisherDialog({
               <div><dt>大小</dt><dd>{formatBytes(preview.archiveBytes)}</dd></div>
               <div><dt>候选摘要</dt><dd><code>{preview.candidateSha256}</code></dd></div>
               <div><dt>文件集摘要</dt><dd><code>{preview.fileSetSha256}</code></dd></div>
-              <div><dt>审计工具</dt><dd>Plugin Release v{preview.auditToolVersion}</dd></div>
+              <div><dt>审计工具</dt><dd>v{preview.auditToolVersion}</dd></div>
             </dl>
             {preview.warnings.length > 0 ? (
               <div className="download-publication-warnings">

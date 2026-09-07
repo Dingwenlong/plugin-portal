@@ -17,8 +17,10 @@ import {
 
 import { HubEntry, type HubRoute } from "../hub/HubEntry";
 import { PortalClient } from "./api";
-import type { DownloadPublicationClient } from "./DownloadPublisher";
-import { PortalModal } from "./PortalModal";
+import { useResource } from "./useResource";
+import type { ResourceState } from "./requestState";
+import { sameContent } from "./requestState";
+import { PortalModal, requestPortalNavigation } from "./PortalModal";
 import { PortalPageAction, PortalPageActionTargetProvider } from "./PortalPageAction";
 import { PluginBrandIcon } from "./PluginBrandIcon";
 import { GlassSurface } from "./GlassSurface";
@@ -49,14 +51,14 @@ import {
 } from "./views/PortalViews";
 import { WorkflowEditor } from "./workflows/WorkflowEditor";
 
-export interface PortalDataClient extends PluginManagementClient, DownloadPublicationClient {
-  getAccessMode(): Promise<PortalAccess>;
-  listPlugins(): Promise<PluginCatalog>;
-  getSnapshot(pluginKey: string): Promise<PluginSnapshot>;
-  getDownloadInfo(pluginKey: string): Promise<PluginDownloadInfo>;
-  getPrompts(pluginKey: string): Promise<PromptDocument>;
+export interface PortalDataClient extends PluginManagementClient {
+  getAccessMode(signal?: AbortSignal): Promise<PortalAccess>;
+  listPlugins(signal?: AbortSignal): Promise<PluginCatalog>;
+  getSnapshot(pluginKey: string, signal?: AbortSignal): Promise<PluginSnapshot>;
+  getDownloadInfo(pluginKey: string, signal?: AbortSignal): Promise<PluginDownloadInfo>;
+  getPrompts(pluginKey: string, signal?: AbortSignal): Promise<PromptDocument>;
   savePrompts(pluginKey: string, revision: number, items: PromptItem[]): Promise<PromptDocument>;
-  getWorkflows(pluginKey: string): Promise<WorkflowDocument>;
+  getWorkflows(pluginKey: string, signal?: AbortSignal): Promise<WorkflowDocument>;
   saveWorkflows(pluginKey: string, revision: number, workflow: WorkflowValue): Promise<WorkflowDocument>;
   previewImport(config: PluginImportConfig): Promise<PluginImportCandidate>;
   promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt>;
@@ -64,10 +66,9 @@ export interface PortalDataClient extends PluginManagementClient, DownloadPublic
 }
 
 interface LoadedPluginData {
-  snapshot: PluginSnapshot;
-  download: PluginDownloadInfo;
-  prompts: PromptDocument;
-  workflow: WorkflowDocument;
+  snapshot?: PluginSnapshot;
+  prompts?: PromptDocument;
+  workflow?: WorkflowDocument;
 }
 
 const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string; icon: LucideIcon }> = [
@@ -108,12 +109,18 @@ function PortalShellContent({
 }) {
   const resolvedClient = useMemo<PortalDataClient>(() => client ?? new PortalClient(), [client]);
   const [browserHash, setBrowserHash] = useState(() => initialHash ?? window.location.hash);
-  const [catalog, setCatalog] = useState<PluginCatalog>({ revision: 0, items: [] });
-  const [selectedPluginId, setSelectedPluginId] = useState("");
-  const [data, setData] = useState<Record<string, LoadedPluginData>>({});
-  const [loading, setLoading] = useState(true);
-  const [access, setAccess] = useState<PortalAccess>({ readOnly: true, fileSelectionMode: "none" });
-  const [error, setError] = useState("");
+  const loaders = useMemo(() => ({
+    catalog: (_key: string, signal: AbortSignal) => resolvedClient.listPlugins(signal),
+    access: (_key: string, signal: AbortSignal) => resolvedClient.getAccessMode(signal),
+    snapshot: (key: string, signal: AbortSignal) => resolvedClient.getSnapshot(key, signal),
+    prompts: (key: string, signal: AbortSignal) => resolvedClient.getPrompts(key, signal),
+    workflow: (key: string, signal: AbortSignal) => resolvedClient.getWorkflows(key, signal),
+    download: (key: string, signal: AbortSignal) => resolvedClient.getDownloadInfo(key, signal),
+  }), [resolvedClient]);
+  const catalogResource = useResource("catalog", loaders.catalog);
+  const accessResource = useResource("access", loaders.access);
+  const catalog = catalogResource.value ?? { revision: 0, items: [] };
+  const access = accessResource.value ?? { readOnly: true, fileSelectionMode: "none" as const };
   const [editingWorkflow, setEditingWorkflow] = useState(false);
   const [pageActionTarget, setPageActionTarget] = useState<HTMLDivElement | null>(null);
   const [capsuleHidden, setCapsuleHidden] = useState(false);
@@ -135,6 +142,8 @@ function PortalShellContent({
 
   const pluginIds = useMemo(() => catalog.items.map((plugin) => plugin.id), [catalog.items]);
   const sourceHash = initialHash ?? browserHash;
+  const activeRoute = useRef(sourceHash);
+  activeRoute.current = sourceHash;
   const isPluginLocation = /^#\/plugins\//.test(sourceHash);
   const hubRoute: HubRoute | undefined = isPluginLocation
     ? undefined
@@ -146,6 +155,7 @@ function PortalShellContent({
     setCapsuleHidden(false);
     setMobileMenuOpen(false);
     setAppearanceOpen(false);
+    setEditingWorkflow(false);
     lastScrollYRef.current = window.scrollY;
     downwardTravelRef.current = 0;
     upwardTravelRef.current = 0;
@@ -254,34 +264,16 @@ function PortalShellContent({
   }, [appearanceOpen]);
 
   useEffect(() => {
-    let active = true;
-    Promise.all([resolvedClient.getAccessMode(), resolvedClient.listPlugins()]).then(([access, nextCatalog]) => {
-      if (!active) return;
-      setAccess(access);
-      setCatalog(nextCatalog);
-      const sourceHash = initialHash ?? window.location.hash;
-      const nextRoute = parsePortalRoute(sourceHash, nextCatalog.items.map((item) => item.id));
-      const nextPluginId = /^#\/plugins\//.test(sourceHash) ? nextRoute.pluginId : "";
-      setSelectedPluginId(nextPluginId);
-      setLoading(false);
-    }).catch((reason: unknown) => {
-      if (!active) return;
-      setError(reason instanceof Error ? reason.message : "无法读取插件目录");
-      setLoading(false);
-    });
-    return () => { active = false; };
-  }, [resolvedClient, initialHash]);
-
-  useEffect(() => {
-    if (initialHash !== undefined) return;
-    if (!hubRoute && route.pluginId && route.pluginId !== selectedPluginId) {
-      setSelectedPluginId(route.pluginId);
-    }
-  }, [hubRoute, initialHash, route.pluginId, selectedPluginId]);
-
-  useEffect(() => {
     if (initialHash !== undefined) return undefined;
-    const onHashChange = () => setBrowserHash(window.location.hash);
+    const onHashChange = () => {
+      const nextHash = window.location.hash;
+      const proceed = () => {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+        setBrowserHash(nextHash);
+      };
+      if (requestPortalNavigation(proceed)) proceed();
+      else window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${activeRoute.current}`);
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [initialHash]);
@@ -292,63 +284,26 @@ function PortalShellContent({
     setBrowserHash("#/");
   }, [initialHash, isPluginLocation, sourceHash]);
 
-  const selectedPlugin = catalog.items.find((plugin) => plugin.id === selectedPluginId);
-  const selectedPluginKey = selectedPlugin?.pluginKey;
-
-  useEffect(() => {
-    if (!selectedPluginKey) return undefined;
-    let active = true;
-    setLoading(true);
-    Promise.all([
-      resolvedClient.getSnapshot(selectedPluginKey),
-      resolvedClient.getPrompts(selectedPluginKey),
-      resolvedClient.getWorkflows(selectedPluginKey),
-    ]).then(([snapshot, prompts, workflow]) => {
-      if (!active) return;
-      setData((current) => ({
-        ...current,
-        [selectedPluginKey]: {
-          snapshot,
-          download: { available: false, version: snapshot.plugin.version, href: null },
-          prompts,
-          workflow,
-        },
-      }));
-      setLoading(false);
-      void resolvedClient.getDownloadInfo(selectedPluginKey).then((download) => {
-        if (!active) return;
-        setData((current) => current[selectedPluginKey] ? {
-          ...current,
-          [selectedPluginKey]: { ...current[selectedPluginKey], download },
-        } : current);
-      }).catch(() => undefined);
-    }).catch((reason: unknown) => {
-      if (!active) return;
-      setError(reason instanceof Error ? reason.message : "无法读取插件公开资料");
-      setLoading(false);
-    });
-    return () => { active = false; };
-  }, [catalog.revision, resolvedClient, selectedPluginKey]);
-
-  if (error) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p role="alert">{error}</p></main>;
-  const refreshHubCatalog = async () => {
-    setCatalog(await resolvedClient.listPlugins());
-    setData({});
-  };
+  const selectedPlugin = catalog.items.find((plugin) => plugin.id === route.pluginId);
+  const selectedPluginKey = hubRoute ? undefined : selectedPlugin?.pluginKey;
+  const snapshotResource = useResource(selectedPluginKey, loaders.snapshot, catalog.revision);
+  const promptsResource = useResource(selectedPluginKey, loaders.prompts, catalog.revision);
+  const workflowResource = useResource(selectedPluginKey, loaders.workflow, catalog.revision);
+  const downloadResource = useResource(selectedPluginKey, loaders.download, catalog.revision);
+  const refreshHubCatalog = async () => { await catalogResource.refresh(); };
 
   if (hubRoute) return <HubEntry
     access={access}
     catalog={catalog}
     client={resolvedClient}
     route={hubRoute}
-    onCatalogChanged={refreshHubCatalog}
-    onDownloadPublished={async (pluginKey) => {
-      const download = await resolvedClient.getDownloadInfo(pluginKey);
-      setData((current) => current[pluginKey] ? {
-        ...current,
-        [pluginKey]: { ...current[pluginKey], download },
-      } : current);
+    catalogStatus={catalogResource.status}
+    catalogError={catalogResource.error ?? accessResource.error}
+    onRetryCatalog={() => {
+      if (catalogResource.status === "error") void catalogResource.refresh().catch(() => undefined);
+      if (accessResource.status === "error") void accessResource.refresh().catch(() => undefined);
     }}
+    onCatalogChanged={refreshHubCatalog}
     onNavigate={(next) => {
       if (initialHash !== undefined) return;
       const nextHash = next === "hub" ? "#/hub" : "#/";
@@ -357,10 +312,9 @@ function PortalShellContent({
     }}
   />;
 
-  if (loading && catalog.items.length === 0) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>正在读取已纳入插件…</p></main>;
-  if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><p>该插件未纳入 Portal。</p></main>;
-
-  const loaded = data[selectedPlugin.pluginKey];
+  if (!selectedPlugin) return <main className="portal-empty-root"><h1>Plugin Portal</h1><a href="#/hub">返回 Hub</a>{catalogResource.status !== "ready" ? <ResourceNotice state={catalogResource} retry={catalogResource.refresh} /> : <p>该插件未纳入 Portal。</p>}</main>;
+  const pageResource = page === "prompts" ? promptsResource : page === "overview" ? workflowResource : snapshotResource;
+  const loaded = { snapshot: snapshotResource.value, prompts: promptsResource.value, workflow: workflowResource.value };
   const currentNavigation = NAVIGATION.find((item) => item.page === page) ?? {
     page: "overview" as const,
     label: PAGE_TITLES.overview,
@@ -418,7 +372,7 @@ function PortalShellContent({
               {mobileMenuOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
             </button>
             <div className="portal-page-actions" ref={setPageActionTarget} />
-            {loaded ? <DownloadAction info={loaded.download} /> : null}
+            <DownloadAction state={downloadResource} version={selectedPlugin.version} retry={downloadResource.refresh} />
             {!compact && <button
               aria-controls="portal-appearance-panel"
               aria-expanded={appearanceOpen}
@@ -435,8 +389,10 @@ function PortalShellContent({
           </div>}
         </header>
         <main aria-label={PAGE_TITLES[page]} className="portal-main">
-          <section className="portal-content" aria-busy={!loaded}>
-            {!loaded ? <p>正在读取公开资料…</p> : renderPage({
+          <section className="portal-content" aria-busy={pageResource.status === "loading"}>
+            {accessResource.error && <ResourceNotice state={accessResource} retry={accessResource.refresh} />}
+            {pageResource.status !== "ready" && <ResourceNotice state={pageResource} retry={pageResource.refresh} />}
+            {pageResource.value && renderPage({
               page,
               readOnly,
               loaded,
@@ -446,13 +402,27 @@ function PortalShellContent({
               onCloseWorkflow: () => { setEditingWorkflow(false); workflowTriggerRef.current?.focus(); },
               onSavePrompts: async (revision, items) => {
                 const prompts = await resolvedClient.savePrompts(selectedPlugin.pluginKey, revision, items);
-                setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], prompts } }));
+                promptsResource.update(prompts);
               },
               onSaveWorkflow: async (revision, workflow) => {
                 const saved = await resolvedClient.saveWorkflows(selectedPlugin.pluginKey, revision, workflow);
-                setData((current) => ({ ...current, [selectedPlugin.pluginKey]: { ...current[selectedPlugin.pluginKey], workflow: saved } }));
-                setEditingWorkflow(false);
+                if (workflowResource.update(saved) && activeRoute.current === sourceHash) setEditingWorkflow(false);
               },
+              onCheckPrompts: async (items) => {
+                const latest = await resolvedClient.getPrompts(selectedPlugin.pluginKey);
+                if (!sameContent(latest.items, items)) return false;
+                promptsResource.update(latest);
+                return true;
+              },
+              onReadPrompts: () => resolvedClient.getPrompts(selectedPlugin.pluginKey),
+              onApplyPrompts: promptsResource.update,
+              onCheckWorkflow: async (workflow) => {
+                const latest = await resolvedClient.getWorkflows(selectedPlugin.pluginKey);
+                if (!sameContent({ pluginKey: latest.pluginKey, tabs: latest.tabs }, workflow)) return false;
+                if (workflowResource.update(latest) && activeRoute.current === sourceHash) setEditingWorkflow(false);
+                return true;
+              },
+              onReadWorkflow: () => resolvedClient.getWorkflows(selectedPlugin.pluginKey),
             })}
           </section>
         </main>
@@ -471,6 +441,11 @@ function renderPage({
   onCloseWorkflow,
   onSavePrompts,
   onSaveWorkflow,
+  onCheckPrompts,
+  onReadPrompts,
+  onApplyPrompts,
+  onCheckWorkflow,
+  onReadWorkflow,
 }: {
   page: PortalPage;
   readOnly: boolean;
@@ -481,9 +456,15 @@ function renderPage({
   onCloseWorkflow: () => void;
   onSavePrompts: (revision: number, items: PromptItem[]) => Promise<void>;
   onSaveWorkflow: (revision: number, workflow: WorkflowValue) => Promise<void>;
+  onCheckPrompts: (items: PromptItem[]) => Promise<boolean>;
+  onReadPrompts: () => Promise<PromptDocument>;
+  onApplyPrompts: (document: PromptDocument) => void;
+  onCheckWorkflow: (workflow: WorkflowValue) => Promise<boolean>;
+  onReadWorkflow: () => Promise<WorkflowDocument>;
 }) {
   switch (page) {
     case "overview":
+      if (!loaded.workflow) return null;
       return <>
         {!readOnly && <PortalPageAction>
           <button aria-label="配置流程" className="portal-page-action" onClick={onOpenWorkflow} ref={workflowTriggerRef} title="配置流程" type="button">
@@ -492,21 +473,30 @@ function renderPage({
           </button>
         </PortalPageAction>}
         <OverviewView workflow={loaded.workflow} />
-        {!readOnly && editingWorkflow ? <PortalModal onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} /></PortalModal> : null}
+        {!readOnly && editingWorkflow ? <PortalModal key={loaded.workflow.pluginKey} returnFocusRef={workflowTriggerRef} onClose={onCloseWorkflow} title="配置流程" wide><WorkflowEditor document={loaded.workflow} onSave={onSaveWorkflow} onCheckSaved={onCheckWorkflow} onReadLatest={onReadWorkflow} /></PortalModal> : null}
       </>;
-    case "skills": return <SkillsView snapshot={loaded.snapshot} />;
-    case "prompts": return <PromptsView document={loaded.prompts} onSave={onSavePrompts} readOnly={readOnly} />;
-    case "mcp": return <McpView snapshot={loaded.snapshot} />;
-    case "extensions": return <ExtensionsView snapshot={loaded.snapshot} />;
-    case "rules": return <RulesView snapshot={loaded.snapshot} />;
-    case "releases": return <ReleasesView snapshot={loaded.snapshot} />;
+    case "skills": return loaded.snapshot && <SkillsView snapshot={loaded.snapshot} />;
+    case "prompts": return loaded.prompts && <PromptsView key={loaded.prompts.pluginKey} document={loaded.prompts} onSave={onSavePrompts} readOnly={readOnly} onCheckSaved={onCheckPrompts} onReadLatest={onReadPrompts} onApplyLatest={onApplyPrompts} />;
+    case "mcp": return loaded.snapshot && <McpView snapshot={loaded.snapshot} />;
+    case "extensions": return loaded.snapshot && <ExtensionsView snapshot={loaded.snapshot} />;
+    case "rules": return loaded.snapshot && <RulesView snapshot={loaded.snapshot} />;
+    case "releases": return loaded.snapshot && <ReleasesView snapshot={loaded.snapshot} />;
   }
 }
 
-function DownloadAction({ info }: { info: PluginDownloadInfo }) {
-  const label = `下载最新版 v${info.version}`;
+function DownloadAction({ state, version, retry }: { state: ResourceState<PluginDownloadInfo>; version: string; retry: () => Promise<unknown> }) {
+  const info = state.value;
+  const label = `下载最新版 v${version}`;
+  if (state.status === "loading") return <button aria-label="正在检查下载" className="portal-download-action" disabled title="正在检查下载" type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">v{version}</span></button>;
+  if (state.status === "error") return <button aria-label="重新检查下载" className="portal-download-action" onClick={() => void retry().catch(() => undefined)} title={`下载检查失败：${state.error ?? "请重试"}`} type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">重试</span></button>;
+  if (!info) return null;
   if (info.available && info.href) {
     return <a aria-label={label} className="portal-download-action" href={info.href} title={label}><Download aria-hidden="true" size={17} /><span className="portal-action-label">v{info.version}</span></a>;
   }
   return <button aria-label={label} className="portal-download-action" disabled title="该插件未提供可下载版本" type="button"><Download aria-hidden="true" size={17} /><span className="portal-action-label">v{info.version}</span></button>;
+}
+
+function ResourceNotice({ state, retry }: { state: ResourceState<unknown>; retry: () => Promise<unknown> }) {
+  if (state.status === "error") return <div className="portal-resource-notice"><p role="alert">{state.error}</p><button onClick={() => void retry().catch(() => undefined)} type="button">重试读取</button><a href="#/hub">返回 Hub</a></div>;
+  return <p role="status">正在读取公开资料…</p>;
 }

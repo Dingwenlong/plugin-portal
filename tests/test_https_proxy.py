@@ -223,14 +223,6 @@ class HttpsProxyTests(unittest.TestCase):
         self.assertNotIn(str(self.server.api.uploads.root), public_candidate)
         self.assertNotIn(uploaded["uploadId"], public_candidate)
         self.assertNotIn('"source"', public_candidate)
-        promote = json.dumps({"candidateId": candidate["candidateId"], "expectedRevision": 0}).encode("utf-8")
-        status, _, _ = self.request(
-            "POST",
-            {**common, "Content-Type": "application/json", "X-Portal-Session": token},
-            "/api/plugins/company-dev%2Fsample-plugin/promote",
-            promote,
-        )
-        self.assertEqual(status, 200)
 
         class Candidate:
             def __init__(self, source_path):
@@ -270,6 +262,14 @@ class HttpsProxyTests(unittest.TestCase):
                 return Receipt()
 
         self.server.api.download_publisher = Publisher()
+        promote = json.dumps({"candidateId": candidate["candidateId"], "expectedRevision": 0}).encode("utf-8")
+        status, _, _ = self.request(
+            "POST",
+            {**common, "Content-Type": "application/json", "X-Portal-Session": token},
+            "/api/plugins/company-dev%2Fsample-plugin/promote",
+            promote,
+        )
+        self.assertEqual(status, 200)
         status, _, body = self.request(
             "POST",
             {

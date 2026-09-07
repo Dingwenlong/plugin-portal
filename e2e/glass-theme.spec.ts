@@ -157,6 +157,7 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
   await expect(page.getByRole("alert")).toContainText("资料已更新，请重试");
   expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
   await page.keyboard.press("Escape");
+  await prompt.getByRole("button", { name: "放弃并关闭" }).click();
   await expect(page.getByRole("button", { name: "新增 Prompt", exact: true })).toBeFocused();
 
   await navigate(page, "overview", "鸟瞰全景");
@@ -177,6 +178,7 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
     .not.toBe(await canvas.evaluate((element) => getComputedStyle(element).backgroundColor));
   await expect(workflow.getByRole("region", { name: "流程画布" })).toContainText("保留未保存步骤");
   await page.keyboard.press("Escape");
+  await workflow.getByRole("button", { name: "放弃并关闭" }).click();
   await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeFocused();
   await themePage.close();
 });

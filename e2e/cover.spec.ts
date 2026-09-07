@@ -35,22 +35,32 @@ test.describe("original cover", () => {
     const start = page.getByRole("button", { name: "Start" });
     await expect(page.locator(".hub-cover-attribution")).toHaveCSS("clip-path", "inset(50%)");
     await expect(start).toBeEnabled({ timeout: 12_000 });
-    await expect.soft(start).toHaveCSS("border-top-width", "0px");
-    await expect.soft(start).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    await expect.soft(start).toHaveCSS("box-shadow", "none");
-    await expect.soft(start).toHaveCSS("text-shadow", "none");
     const background = page.locator("[data-cover-accretion-canvas]");
     await expect(background).toHaveAttribute("data-render-state", "ready");
-    await expect.soft(background).toHaveJSProperty("width", viewport.width);
-    await expect.soft(background).toHaveJSProperty("height", viewport.height);
-    await expect.soft(background).toHaveCSS("filter", "none");
-    await expect.soft(background).toHaveCSS("opacity", "1");
-    await expect(start).toHaveCSS("width", "112px");
-    await expect(start).toHaveCSS("height", "112px");
+    // Read settled styles together: serial browser round trips compete with the
+    // full-resolution sketch and can consume the test budget before input.
+    // Keep every visual assertion and the independent 3-second transition gate.
+    const initial = await page.evaluate(() => {
+      const button = getComputedStyle(document.querySelector("[data-cover-liquid-glass-button]")!);
+      const canvas = document.querySelector<HTMLCanvasElement>("[data-cover-accretion-canvas]")!;
+      const backdrop = getComputedStyle(canvas);
+      return {
+        button: {
+          border: button.borderTopWidth, background: button.backgroundColor,
+          shadow: button.boxShadow, textShadow: button.textShadow,
+        },
+        size: { width: button.width, height: button.height },
+        background: { width: canvas.width, height: canvas.height, filter: backdrop.filter, opacity: backdrop.opacity },
+      };
+    });
+    expect.soft(initial.button).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", shadow: "none", textShadow: "none" });
+    expect.soft(initial.background).toEqual({ width: viewport.width, height: viewport.height, filter: "none", opacity: "1" });
+    expect(initial.size).toEqual({ width: "112px", height: "112px" });
     await start.hover();
-    await expect(start).toHaveCSS("border-top-width", "0px");
-    await expect(start).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    await expect(start).toHaveCSS("box-shadow", "none");
+    await expect.poll(() => start.evaluate((button) => {
+      const style = getComputedStyle(button);
+      return { border: style.borderTopWidth, background: style.backgroundColor, shadow: style.boxShadow };
+    })).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", shadow: "none" });
     const buttonCanvas = page.locator("[data-cover-liquid-glass-canvas]");
     await expect.poll(async () => Number(await buttonCanvas.getAttribute("data-rendered-frame")), { timeout: 12_000 }).toBeGreaterThan(0);
     await expect(buttonCanvas).toHaveAttribute("data-orb-style", "particleRibbon");
