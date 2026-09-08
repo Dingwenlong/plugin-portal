@@ -109,6 +109,14 @@ Hub 不再提供需要二次上传的“发布下载”按钮。Portal 只分发
 
 下载目录沿用现有 `%LOCALAPPDATA%\project-delivery-hub-share\downloads`，必须事先存在并由现有 9134 服务读取；Portal 不创建、配置或重启 9134。候选上限为 128 MiB。同版本同文件可核对后复用，同版本不同 ZIP 绝不覆盖。确认前候选变化、Plugin Inspector 拒绝、写入失败或下载回读不一致都会停止；已激活但回读失败的新文件会被隔离，既有下载不受影响。发布回执位于 Portal 私有数据目录，不记录候选绝对路径或原始命令输出。
 
+### 规范核心 ZIP
+
+正式规范导入对象是原始单插件核心 ZIP，采用 Plugin Inspector 维护的 `codex-plugin-portal` v1 文件组：核心 ZIP 使用唯一的 `<plugin-id>/` 顶层目录，`plugin-package.json`、检查回执和运行时、数据、签名等附属资产放在 ZIP 外。规范与机器结构分别以 Inspector 的 `references/portal-package-v1.md` 和 `schemas/portal-package-v1.schema.json` 为准，Portal 不另建一份格式标准。
+
+Portal 仍只上传并分发同一个核心 ZIP，不需要第二次上传或再套一层 ZIP。元数据是支持该规范的 Inspector 的外置发布检查输入；Portal 当前既不自动读取它，也未实现 sidecar 与用户所选 `target` 的自动冲突校验。纳入时应按发布者回执明确填写该版本的 `target`，把已批准的 `portal.approvedRulePaths` 与 `portal.extensionTools` 填入现有高级选项，缺省为空。检查回执不能代替实际公开预览。
+
+公开资料继续从被检查的核心生成。Portal 不读取、下载或执行 ZIP 外的附属资产，也不把文件摘要匹配当成签名可信、安装成功或正式发布通过。原始 ZIP SHA、Inspector 文件集 SHA 与 Portal 的 `provenance.packageDigest`（公开投影摘要）是三种不同的摘要，不得互换。使用新的 Inspector 规范检查入口前，仍须显式验证工具版本、路径和摘要；不自动升级现有固定审计工具。
+
 如果 IIS 的 9134 返回 502.3，应先检查其配置中的本机上游是否监听，而不是重新上传 ZIP。仓库提供独立的[下载后端恢复入口](scripts/DOWNLOAD-SERVICE.md)，只服务既有公开文件，不依赖旧 Prompts 后端或插件缓存；它必须经单独授权和两阶段验证后启用，不由 Portal 自动启动。
 
 只读模式不显示纳入入口，并在读取或解析候选前拒绝写请求。下载按钮区分检查中、可下载、未提供和检查失败；只有下载服务明确返回文件不存在时才显示未提供，临时故障可重新检查。
