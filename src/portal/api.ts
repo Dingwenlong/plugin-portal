@@ -8,17 +8,21 @@ import type {
   PluginImportCandidate,
   PluginImportConfig,
   PluginMutationReceipt,
+  EngineeringRule,
+  PluginRemovalReceipt,
   PluginSnapshot,
   PluginUploadReceipt,
   PortalAccess,
   PromptDocument,
   PromptItem,
   WorkflowDocument,
+  WorkflowImageReceipt,
   WorkflowValue,
 } from "./types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-import { PortalRequestError } from "./requestState";
+import { isContentDocument, isContentPreview, type ContentKind, type ContentDocument, type ContentPreview } from "./contentTypes";
+import { PortalRequestError, sameContent } from "./requestState";
 export { PortalRequestError } from "./requestState";
 
 export class PortalClient {
@@ -69,13 +73,44 @@ export class PortalClient {
 
   async previewImport(config: PluginImportConfig): Promise<PluginImportCandidate> {
     const value = await this.mutate("/api/plugins/import/preview", config, 300_000);
-    if (
-      !isClosedRecord(value, ["candidateId", "pluginKey", "snapshot"]) ||
-      !isText(value.candidateId) ||
-      !isText(value.pluginKey) ||
-      !isPluginSnapshot(value.snapshot)
-    ) {
-      throw new Error("插件预览回应无效");
+    return this.importPreview(value);
+  }
+
+  async reorderPlugins(pluginIds: string[], revision: number): Promise<{ revision: number; pluginIds: string[] }> {
+    const value = await this.mutate("/api/plugins/order", { pluginIds, expectedRevision: revision });
+    if (!isClosedRecord(value, ["revision", "pluginIds"]) || value.revision !== revision + 1 || !sameContent(value.pluginIds, pluginIds)) {
+      throw new PortalRequestError("排序回应无效，结果待确认", "invalid_response", 200, true);
+    }
+    return value as { revision: number; pluginIds: string[] };
+  }
+
+  async readImportRule(candidateId: string, path: string): Promise<EngineeringRule> {
+    const value = await this.mutate(`/api/plugins/import/candidates/${encodeURIComponent(candidateId)}/rules/read`, { path });
+    if (!isClosedRecord(value, ["path", "bodyMarkdown"]) || value.path !== path || !isText(value.bodyMarkdown)) {
+      throw new Error("规范正文回应无效");
+    }
+    return value as unknown as EngineeringRule;
+  }
+
+  async previewImportRules(candidateId: string, paths: string[]): Promise<PluginImportCandidate> {
+    return this.importPreview(await this.mutate(`/api/plugins/import/candidates/${encodeURIComponent(candidateId)}/rules/preview`, { paths }));
+  }
+
+  private importPreview(value: unknown): PluginImportCandidate {
+    const withOptions = Boolean(value && typeof value === "object" && "importOptions" in value);
+    if (!isClosedRecord(value, withOptions ? ["candidateId", "pluginKey", "snapshot", "importOptions"] : ["candidateId", "pluginKey", "snapshot"])
+      || !isText(value.candidateId) || !isText(value.pluginKey) || !isPluginSnapshot(value.snapshot)
+      || value.pluginKey !== `${value.snapshot.plugin.target}/${value.snapshot.plugin.id}`) throw new Error("插件预览回应无效");
+    if (withOptions) {
+      const options = value.importOptions;
+      if (!isClosedRecord(options, ["marketplace", "currentVersion", "catalogRevision", "rules", "rulesTruncated"])
+        || (options.marketplace !== null && options.marketplace !== value.snapshot.plugin.target)
+        || (options.currentVersion !== null && !isText(options.currentVersion)) || !isRevision(options.catalogRevision)
+        || typeof options.rulesTruncated !== "boolean" || !Array.isArray(options.rules)
+        || !options.rules.every((rule) => isClosedRecord(rule, ["path", "title", "available", "reason"])
+          && isText(rule.path) && isText(rule.title) && typeof rule.available === "boolean"
+          && (rule.available ? rule.reason === null : isText(rule.reason)))
+        || new Set(options.rules.map((rule) => rule.path)).size !== options.rules.length) throw new Error("插件导入选项回应无效");
     }
     return value as unknown as PluginImportCandidate;
   }
@@ -187,6 +222,33 @@ export class PortalClient {
     return value;
   }
 
+  async removePlugin(pluginKey: string, revision: number): Promise<PluginRemovalReceipt> {
+    const value = await this.mutate(this.pluginUrl(pluginKey, "remove"), { expectedRevision: revision });
+    if (!isClosedRecord(value, ["revision", "pluginKey"]) || value.pluginKey !== pluginKey || value.revision !== revision + 1) {
+      throw new PortalRequestError("删除回应无效，结果待确认", "invalid_response", 200, true);
+    }
+    return value as unknown as PluginRemovalReceipt;
+  }
+
+  async uploadWorkflowImage(pluginKey: string, file: File, signal?: AbortSignal): Promise<WorkflowImageReceipt> {
+    const token = await this.getSessionToken();
+    try {
+      const value = await this.request(this.pluginUrl(pluginKey, "workflows/images"), {
+        method: "POST", signal,
+        headers: { "Content-Type": file.type, "X-Portal-Session": token }, body: file,
+      }, 300_000);
+      if (!isClosedRecord(value, ["assetId", "width", "height"]) || !isSha256(value.assetId)
+          || !isPositiveInteger(value.width) || !isPositiveInteger(value.height)
+          || (value.width as number) * (value.height as number) > 20_000_000) {
+        throw new PortalRequestError("图片上传回应无效，请重试该图片", "invalid_response", 200, true);
+      }
+      return value as unknown as WorkflowImageReceipt;
+    } catch (error) {
+      if (error instanceof PortalRequestError && error.code === "invalid_session" && this.sessionToken === token) this.sessionToken = undefined;
+      throw error;
+    }
+  }
+
   async saveWorkflows(
     pluginKey: string,
     revision: number,
@@ -197,6 +259,28 @@ export class PortalClient {
       workflow,
     }, 30_000, true);
     if (!isWorkflowDocument(value, pluginKey)) throw new PortalRequestError("流程回应无效，结果待确认", "invalid_response", 200, true);
+    return value;
+  }
+
+  async getContent(pluginKey: string, kind: ContentKind, signal?: AbortSignal): Promise<ContentDocument> {
+    const value = await this.request(this.pluginUrl(pluginKey, `content/${kind}`), { signal });
+    if (!isContentDocument(value, pluginKey, kind)) throw new Error("页面内容回应无效");
+    return value;
+  }
+
+  async previewContent(pluginKey: string, kind: ContentKind, document: unknown): Promise<ContentPreview> {
+    const value = await this.mutate(this.pluginUrl(pluginKey, `content/${kind}/preview`), document, 30_000, true);
+    if (!isContentPreview(value, pluginKey, kind)) throw new Error("页面内容预览无效，请重新预览");
+    return value;
+  }
+
+  async confirmContent(pluginKey: string, kind: ContentKind, preview: ContentPreview): Promise<ContentDocument> {
+    const value = await this.mutate(this.pluginUrl(pluginKey, `content/${kind}/confirm`), {
+      candidateId: preview.candidateId, expectedRevision: preview.revision,
+    });
+    if (!isContentDocument(value, pluginKey, kind) || value.document === null || value.revision <= preview.revision || !sameContent(value.document, preview.document)) {
+      throw new PortalRequestError("保存回应无效，结果待确认", "invalid_response", 200, true);
+    }
     return value;
   }
 
@@ -462,10 +546,15 @@ function isWorkflowDocument(value: unknown, pluginKey: string): value is Workflo
           Array.isArray(section.steps) &&
           section.steps.every(
             (step) =>
-              isClosedRecord(step, ["id", "label", "title", "description", "next"]) &&
+              isClosedRecord(step, ["id", "label", "title", "description", "next", ...(typeof step === "object" && step !== null && "images" in step ? ["images"] : [])]) &&
               [step.id, step.label, step.title, step.description].every((item) => typeof item === "string") &&
               Array.isArray(step.next) &&
-              step.next.every(isText),
+              step.next.every(isText) &&
+              (step.images === undefined || Array.isArray(step.images) && step.images.length <= 6
+                && step.images.every((image) => isClosedRecord(image, ["assetId", "alt", ...(typeof image === "object" && image !== null && "title" in image ? ["title"] : [])]) && isSha256(image.assetId)
+                  && (image.title === undefined || typeof image.title === "string" && image.title.length <= 200 && !/[\0\r\n]/.test(image.title))
+                  && typeof image.alt === "string" && image.alt.length <= 200 && !image.alt.includes("\0"))
+                && new Set(step.images.map((image) => image.assetId)).size === step.images.length),
           ),
       ),
   );

@@ -93,7 +93,7 @@ describe("HubEntry plugin icons", () => {
     const include = screen.getByRole("button", { name: "纳入插件" });
     const heading = include.closest(".company-dev-hub-section-heading");
     expect(heading).not.toBeNull();
-    const title = within(heading as HTMLElement).getByRole("heading", { level: 2, name: "插件" });
+    const title = within(heading as HTMLElement).getByRole("heading", { level: 2, name: "Plugin Family" });
     expect(title.nextElementSibling).toBe(include);
     expect(include).not.toHaveTextContent("纳入插件");
     expect(include.querySelector("svg")).not.toBeNull();
@@ -106,7 +106,7 @@ describe("HubEntry plugin icons", () => {
       expect(icon).toHaveAttribute("alt", "");
       expect(identity?.firstElementChild).toBe(icon);
       expect(identity?.lastElementChild).toHaveTextContent(item.name);
-      expect(entry).toHaveAttribute("href", `#/plugins/${item.id}/overview`);
+      expect(entry).toHaveAttribute("href", `#/plugins/${encodeURIComponent(item.pluginKey)}/overview`);
       expect(entry).not.toHaveTextContent("进入");
       expect(entry.querySelector(".company-dev-hub-entry-action")).toBeNull();
     }
@@ -120,7 +120,7 @@ describe("HubEntry plugin icons", () => {
     fireEvent.error(icon!);
     expect(entry.querySelector("img")).toBeNull();
     expect(entry.querySelector(".portal-brand-fallback")).toHaveAttribute("aria-hidden", "true");
-    expect(entry).toHaveAttribute("href", "#/plugins/yusheng-inc/overview");
+    expect(entry).toHaveAttribute("href", "#/plugins/company-dev%2Fyusheng-inc/overview");
     expect(screen.getByRole("link", { name: "研发助手插件" }).querySelector("img"))
       .toHaveAttribute("src", "/api/plugins/company-dev%2Fproject-delivery-hub/icon?revision=2");
   });

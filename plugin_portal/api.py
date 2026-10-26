@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+import hashlib
 import os
 import re
 import secrets
@@ -13,14 +14,17 @@ from pathlib import Path
 from typing import Any
 
 from .download_publication import DownloadPublicationError, DownloadPublisher
-from .models import ModelValidationError, parse_plugin_key
+from .models import ModelValidationError, parse_plugin_key, canonical_json_bytes
 from .directory_picker import choose_plugin_archive, choose_plugin_directory
 from .plugin_reader import PluginIconNotFound, PluginReadError, preview_plugin, read_plugin_icon
-from .plugin_archive import PluginArchiveError, extract_plugin_archive
+from .plugin_archive import PluginArchiveError, extract_plugin_archive_details
+from .import_rules import discover_import_rules
 from .prompts import PromptRepository, PromptValidationError
 from .storage import PortalStore, RevisionConflict, StorageError
 from .uploads import UploadError, UploadRegistry
 from .workflows import WorkflowRepository, WorkflowValidationError
+from .workflow_images import WorkflowImageStore, WorkflowImageError
+from .content_documents import ContentRepository, ContentValidationError, content_template, content_diff, validate_content
 
 
 class ApiError(RuntimeError):
@@ -56,6 +60,7 @@ class PortalApi:
         self.download_publisher = download_publisher
         self.prompts = PromptRepository(store)
         self.workflows = WorkflowRepository(store)
+        self.content = ContentRepository(store)
         self.download_probe = download_probe or _probe_local_download
         self.plugin_cache_root = Path(plugin_cache_root) if plugin_cache_root is not None else _default_plugin_cache_root()
         self.uploads = upload_registry
@@ -130,13 +135,14 @@ class PortalApi:
             raise ApiError("插件来源结构无效")
 
         uploaded_id: str | None = None
+        marketplace: str | None = None
         if source.get("kind") == "server-directory":
             if set(source) != {"kind", "path"} or not isinstance(source.get("path"), str):
                 raise ApiError("插件来源结构无效")
             if self.access_mode != "local-management":
                 raise ApiError("当前模式不允许读取服务器目录", code="source_mode_invalid")
             plugin_root = Path(source["path"])
-            snapshot, icon = self._project_plugin(plugin_root, payload)
+            snapshot, icon, rule_discovery = self._project_plugin(plugin_root, payload)
         elif source.get("kind") == "upload":
             if set(source) != {"kind", "uploadId"} or not isinstance(source.get("uploadId"), str):
                 raise ApiError("插件来源结构无效")
@@ -153,11 +159,11 @@ class PortalApi:
                     prefix=f"{upload.upload_id}-extract-",
                 ) as extraction_root:
                     try:
-                        plugin_root = extract_plugin_archive(upload.path, Path(extraction_root) / "content")
+                        plugin_root, marketplace = extract_plugin_archive_details(upload.path, Path(extraction_root) / "content")
                     except PluginArchiveError as error:
                         self.uploads.discard(token, "plugin-import", uploaded_id)
                         raise ApiError(str(error), code=error.code) from None
-                    snapshot, icon = self._project_plugin(plugin_root, payload)
+                    snapshot, icon, rule_discovery = self._project_plugin(plugin_root, {**payload, "target": marketplace or payload["target"]})
             except ApiError:
                 raise
             except OSError:
@@ -166,21 +172,31 @@ class PortalApi:
             raise ApiError("插件来源结构无效")
 
         plugin_key = f"{snapshot['plugin']['target']}/{snapshot['plugin']['id']}"
+        catalog = self._catalog()
+        current = catalog["data"]["plugins"].get(plugin_key)
         candidate_id = secrets.token_urlsafe(24)
         with self._lock:
             candidate = {
                 "kind": "plugin-import",
                 "pluginKey": plugin_key,
                 "snapshot": deepcopy(snapshot),
+                "ruleDocuments": rule_discovery["documents"],
+                "importOptions": {
+                    "marketplace": marketplace,
+                    "catalogRevision": catalog["revision"],
+                    "currentVersion": current["plugin"]["version"] if current else None,
+                    "rules": rule_discovery["choices"],
+                    "rulesTruncated": rule_discovery["truncated"],
+                },
             }
             if uploaded_id is not None:
                 candidate["uploadId"] = uploaded_id
             if icon is not None:
                 candidate["icon"] = icon
             candidates[candidate_id] = candidate
-        return {"candidateId": candidate_id, "pluginKey": plugin_key, "snapshot": snapshot}
+        return self._import_preview(candidate_id, candidate)
 
-    def _project_plugin(self, plugin_root: Path, payload: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, bytes] | None]:
+    def _project_plugin(self, plugin_root: Path, payload: dict[str, Any]) -> tuple[dict, tuple[str, bytes] | None, dict]:
         try:
             snapshot = preview_plugin(
                 plugin_root,
@@ -194,9 +210,52 @@ class PortalApi:
                 icon = (content_type, bytes(icon_payload))
             except PluginIconNotFound:
                 icon = None
+            rule_discovery = discover_import_rules(plugin_root)
         except (PluginReadError, TypeError) as error:
             raise ApiError(str(error), code="plugin_preview_failed") from None
-        return snapshot, icon
+        return snapshot, icon, rule_discovery
+
+    @staticmethod
+    def _import_preview(candidate_id: str, candidate: dict) -> dict:
+        return {"candidateId": candidate_id, "pluginKey": candidate["pluginKey"],
+                "snapshot": deepcopy(candidate["snapshot"]), "importOptions": deepcopy(candidate["importOptions"])}
+
+    def read_import_rule(self, token: str, candidate_id: str, payload: object) -> dict:
+        candidates = self._require_session(token)
+        if not isinstance(payload, dict) or set(payload) != {"path"} or not isinstance(payload["path"], str):
+            raise ApiError("规范文件选择无效")
+        with self._lock:
+            candidate = candidates.get(candidate_id)
+            if candidate is None or candidate.get("kind") != "plugin-import":
+                raise ApiError("导入候选不存在或已失效", status=404, code="candidate_not_found")
+            body = candidate["ruleDocuments"].get(payload["path"])
+            if body is None:
+                raise ApiError("该规范文件不可公开或不在本次候选中", code="rule_not_available")
+            return {"path": payload["path"], "bodyMarkdown": body}
+
+    def preview_import_rules(self, token: str, candidate_id: str, payload: object) -> dict:
+        candidates = self._require_session(token)
+        if (not isinstance(payload, dict) or set(payload) != {"paths"} or not isinstance(payload["paths"], list)
+                or not all(isinstance(path, str) for path in payload["paths"])):
+            raise ApiError("规范文件选择无效")
+        paths = payload["paths"]
+        if len(paths) != len(set(paths)):
+            raise ApiError("规范文件选择重复")
+        with self._lock:
+            candidate = candidates.get(candidate_id)
+            if candidate is None or candidate.get("kind") != "plugin-import":
+                raise ApiError("导入候选不存在或已失效", status=404, code="candidate_not_found")
+            if any(path not in candidate["ruleDocuments"] for path in paths):
+                raise ApiError("所选规范文件不可公开或不在本次候选中", code="rule_not_available")
+            snapshot = deepcopy(candidate["snapshot"])
+            snapshot["engineeringRules"] = [{"path": path, "bodyMarkdown": candidate["ruleDocuments"][path]} for path in paths]
+            projected = {key: value for key, value in snapshot.items() if key != "provenance"}
+            snapshot["provenance"]["packageDigest"] = "sha256:" + hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
+            next_id = secrets.token_urlsafe(24)
+            updated = {**candidate, "snapshot": snapshot}
+            candidates[next_id] = updated
+            candidates.pop(candidate_id)
+            return self._import_preview(next_id, updated)
 
     def promote(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
         candidates = self._require_session(token)
@@ -469,10 +528,99 @@ class PortalApi:
             raise ApiError("无法回滚插件快照", status=500, code="storage_failed") from None
         return {"revision": written["revision"], "pluginKey": plugin_key, "snapshotId": previous}
 
+    def remove_plugin(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
+        self._require_session(token)
+        if self.access_mode == "read-only":
+            raise ApiError("只读模式不能删除插件", status=403, code="read_only")
+        self._require_plugin_key(plugin_key)
+        body = self._mutation_body(payload, with_candidate=False)
+        catalog = self._catalog()
+        if catalog["revision"] != body["expectedRevision"]:
+            raise ApiError("插件列表已更新，请刷新后重新选择", status=409, code="revision_conflict")
+        if plugin_key not in catalog["data"]["plugins"]:
+            raise ApiError("插件尚未纳入", status=404, code="plugin_not_found")
+        next_data = deepcopy(catalog["data"])
+        del next_data["plugins"][plugin_key]
+        try:
+            # Removing a catalog entry leaves snapshots, packages and user content intact.
+            saved_order = self.store.read_document("catalog-order")
+            family = catalog["data"]["plugins"][plugin_key]["plugin"]["id"]
+            remaining = {record["plugin"]["id"] for record in next_data["plugins"].values()}
+            if saved_order["revision"] > 0 and family not in remaining:
+                order = [item for item in saved_order["data"].get("ids", []) if item != family]
+                written = self.store.write_documents_batch({
+                    "catalog": (next_data, body["expectedRevision"]),
+                    "catalog-order": ({"ids": order}, saved_order["revision"]),
+                })["catalog"]
+            else:
+                written = self.store.write_document("catalog", next_data, body["expectedRevision"])
+        except RevisionConflict as error:
+            raise ApiError(str(error), status=409, code="revision_conflict") from None
+        except StorageError:
+            raise ApiError("无法删除插件条目", status=500, code="storage_failed") from None
+        return {"revision": written["revision"], "pluginKey": plugin_key}
+
+    def _family_order(self, catalog: dict, saved: dict) -> list[str]:
+        plugins = catalog["data"]["plugins"]
+        families = {record["plugin"]["id"] for record in plugins.values()}
+        ids = saved["data"].get("ids", [])
+        if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids) or len(set(ids)) != len(ids):
+            raise ApiError("插件顺序资料无效", status=500, code="catalog_order_invalid")
+        ordered = [item for item in ids if item in families]
+        missing = families - set(ordered)
+        if saved["revision"] == 0:
+            # Keep the established default until a user first arranges the list.
+            ordered.extend(dict.fromkeys(plugins[key]["plugin"]["id"] for key in sorted(plugins)))
+            return ordered
+        def admitted_at(family: str) -> tuple[str, str]:
+            dates = []
+            for key, record in plugins.items():
+                if record["plugin"]["id"] == family:
+                    snapshot = self.store.read_snapshot(key, record["history"][0])
+                    dates.append(snapshot["provenance"]["importedAt"])
+            return min(dates), family
+        return ordered + sorted(missing, key=admitted_at)
+
+    def reorder_plugins(self, token: str, payload: object) -> dict[str, Any]:
+        self._require_session(token)
+        if self.access_mode == "read-only":
+            raise ApiError("只读模式不能调整插件顺序", status=403, code="read_only")
+        if not isinstance(payload, dict) or set(payload) != {"expectedRevision", "pluginIds"}:
+            raise ApiError("插件排序资料结构无效")
+        revision = self._revision(payload["expectedRevision"])
+        ids = payload["pluginIds"]
+        if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids) or len(set(ids)) != len(ids):
+            raise ApiError("pluginIds 必须是无重复的插件 ID 列表")
+        catalog = self._catalog()
+        if catalog["revision"] != revision:
+            raise ApiError("插件列表已更新，请刷新后重新排序", status=409, code="revision_conflict")
+        expected = {record["plugin"]["id"] for record in catalog["data"]["plugins"].values()}
+        if set(ids) != expected:
+            raise ApiError("pluginIds 必须包含当前全部插件家族", code="plugin_order_mismatch")
+        try:
+            saved = self.store.read_document("catalog-order")
+            written = self.store.write_documents_batch({
+                "catalog": (catalog["data"], revision),
+                "catalog-order": ({"ids": ids}, saved["revision"]),
+            })
+        except RevisionConflict as error:
+            raise ApiError(str(error), status=409, code="revision_conflict") from None
+        except StorageError:
+            raise ApiError("无法保存插件顺序", status=500, code="storage_failed") from None
+        return {"revision": written["catalog"]["revision"], "pluginIds": ids}
+
     def list_plugins(self) -> dict[str, Any]:
         catalog = self._catalog()
         items = []
-        for plugin_key in sorted(catalog["data"]["plugins"]):
+        try:
+            saved_order = self.store.read_document("catalog-order")
+            order = self._family_order(catalog, saved_order)
+        except StorageError:
+            raise ApiError("插件顺序资料不可用", status=500, code="catalog_order_unavailable") from None
+        ranks = {family: index for index, family in enumerate(order)}
+        plugins = catalog["data"]["plugins"]
+        keys = sorted(plugins) if saved_order["revision"] == 0 else sorted(plugins, key=lambda key: (ranks[plugins[key]["plugin"]["id"]], key))
+        for plugin_key in keys:
             record = catalog["data"]["plugins"][plugin_key]
             plugin = record["plugin"]
             items.append(
@@ -539,6 +687,70 @@ class PortalApi:
         except (ApiError, PluginReadError):
             return "image/svg+xml", _GENERIC_PLUGIN_ICON
 
+    def get_content(self, plugin_key: str, kind: str) -> dict[str, Any]:
+        self.get_snapshot(plugin_key)
+        try:
+            return self.content.get(plugin_key, kind)
+        except (StorageError, ContentValidationError):
+            raise ApiError("页面内容不可用", status=500, code="content_unavailable") from None
+
+    def download_content(self, plugin_key: str, kind: str, template: bool = False) -> dict[str, Any]:
+        snapshot = self.get_snapshot(plugin_key)
+        if template:
+            return content_template(snapshot, plugin_key, kind)
+        document = self.get_content(plugin_key, kind)["document"]
+        if document is None:
+            raise ApiError("尚未上传页面内容", status=404, code="content_not_found")
+        return document
+
+    def preview_content(self, token: str, plugin_key: str, kind: str, payload: object) -> dict[str, Any]:
+        if self.access_mode == "read-only":
+            raise ApiError("只读模式不能上传内容", status=403, code="read_only")
+        candidates = self._require_session(token)
+        current = self.get_content(plugin_key, kind)
+        try:
+            document = validate_content(payload, plugin_key, kind)
+        except ContentValidationError as error:
+            raise ApiError(str(error), code="content_invalid") from None
+        candidate_id = secrets.token_urlsafe(24)
+        candidate = {"kind": "page-content", "pluginKey": plugin_key, "documentType": kind,
+                     "document": document, "expectedRevision": current["revision"]}
+        with self._lock:
+            for key in list(candidates):
+                old = candidates[key]
+                if old.get("kind") == "page-content" and old.get("pluginKey") == plugin_key and old.get("documentType") == kind:
+                    del candidates[key]
+            candidates[candidate_id] = deepcopy(candidate)
+        return {"candidateId": candidate_id, "revision": current["revision"], "document": document,
+                "diff": content_diff(current["document"], document)}
+
+    def confirm_content(self, token: str, plugin_key: str, kind: str, payload: object) -> dict[str, Any]:
+        if self.access_mode == "read-only":
+            raise ApiError("只读模式不能保存内容", status=403, code="read_only")
+        candidates = self._require_session(token)
+        self.get_snapshot(plugin_key)
+        if not isinstance(payload, dict) or set(payload) != {"candidateId", "expectedRevision"} or not isinstance(payload["candidateId"], str):
+            raise ApiError("确认资料结构无效")
+        revision = self._revision(payload["expectedRevision"])
+        with self._lock:
+            candidate = candidates.get(payload["candidateId"])
+            if not candidate or candidate.get("kind") != "page-content" or candidate.get("pluginKey") != plugin_key or candidate.get("documentType") != kind:
+                raise ApiError("预览已失效，请重新预览", code="candidate_invalid")
+            if revision != candidate["expectedRevision"]:
+                raise ApiError("预览修订号不一致，请重新预览", status=409, code="revision_conflict")
+            if "result" in candidate:
+                return deepcopy(candidate["result"])
+            try:
+                result = self.content.save(plugin_key, kind, candidate["document"], revision)
+            except ContentValidationError as error:
+                raise ApiError(str(error), code="content_invalid") from None
+            except RevisionConflict as error:
+                raise ApiError(str(error), status=409, code="revision_conflict") from None
+            except StorageError:
+                raise ApiError("无法保存页面内容", status=500, code="storage_failed") from None
+            candidate["result"] = deepcopy(result)
+            return result
+
     def get_prompts(self, plugin_key: str) -> dict[str, Any]:
         self._require_plugin_key(plugin_key)
         try:
@@ -568,6 +780,29 @@ class PortalApi:
         except (WorkflowValidationError, StorageError):
             raise ApiError("流程资料不可用", status=500, code="workflows_unavailable") from None
 
+    def upload_workflow_image(self, token, plugin_key, content_type, source, content_length):
+        if self.access_mode == "read-only":
+            raise ApiError("只读模式不能上传图片", status=403, code="read_only")
+        self._require_session(token)
+        self._require_plugin_key(plugin_key)
+        self._active_plugin_version(plugin_key)
+        try:
+            return WorkflowImageStore(self.store).stage(plugin_key, content_type, source, content_length)
+        except WorkflowImageError as error:
+            raise ApiError(str(error), status=error.status, code=error.code) from None
+        except (OSError, StorageError, WorkflowValidationError):
+            raise ApiError("图片暂存失败，请重试", status=500, code="image_storage_failed") from None
+
+    def get_workflow_image(self, plugin_key, asset_id, variant):
+        self._require_plugin_key(plugin_key)
+        self._active_plugin_version(plugin_key)
+        try:
+            return WorkflowImageStore(self.store).read_public(plugin_key, asset_id, variant)
+        except WorkflowImageError as error:
+            raise ApiError(str(error), status=error.status, code=error.code) from None
+        except (OSError, StorageError, WorkflowValidationError):
+            raise ApiError("图片资料不可用", status=500, code="image_unavailable") from None
+
     def save_workflows(self, token: str, plugin_key: str, payload: object) -> dict[str, Any]:
         self._require_session(token)
         self._require_plugin_key(plugin_key)
@@ -576,6 +811,8 @@ class PortalApi:
         revision = self._revision(payload["expectedRevision"])
         try:
             return self.workflows.save(plugin_key, payload["workflow"], expected_revision=revision)
+        except WorkflowImageError as error:
+            raise ApiError(str(error), status=error.status, code=error.code) from None
         except WorkflowValidationError as error:
             raise ApiError(str(error), code="workflow_invalid") from None
         except RevisionConflict as error:

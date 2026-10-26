@@ -49,5 +49,6 @@ export function useSaveRecovery<T>(checkSaved?: (value: T) => Promise<boolean>, 
     locked.current = true; setBusy(true);
     try { await confirm(attempt); } finally { locked.current = false; if (alive.current) setBusy(false); }
   };
-  return { busy, error, pending: pending !== undefined, frozen: pending, conflict, run, check };
+  const resetError = () => { if (!locked.current && !attempted.current) { setError(""); setConflict(false); } };
+  return { busy, error, pending: pending !== undefined, frozen: pending, conflict, run, check, resetError };
 }

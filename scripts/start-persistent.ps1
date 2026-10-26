@@ -12,10 +12,7 @@ Set-StrictMode -Version Latest
 function Read-PortalConfiguration {
     Assert-PortalFilePin ([pscustomobject]@{ path = $ConfigPath; sha256 = $ConfigSha256 })
     $settings = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $required = 'schemaVersion,runtime,python,caddy,caddyConfig,certificate,dataRoot,logRoot,lanAddress,auditConfigPath,maxRestarts,restartDelaySeconds'.Split(',')
-    if (@(Compare-Object @($settings.PSObject.Properties.Name) $required).Count -ne 0 -or $settings.schemaVersion -ne '1.0.0') {
-        throw 'Unsupported Portal configuration.'
-    }
+    Assert-PortalCoreConfigurationSchema $settings
     if ($settings.lanAddress -notmatch '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' -or
         ([Net.IPAddress]::Parse($settings.lanAddress)).AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or
         -not (Get-NetIPAddress -IPAddress $settings.lanAddress -ErrorAction SilentlyContinue)) {
@@ -37,10 +34,6 @@ function Read-PortalConfiguration {
             [IO.Path]::GetFullPath($path).TrimEnd('\', '/') -eq $settings.runtime.path.TrimEnd('\', '/')) {
             throw 'Mutable data and logs must be outside the pinned runtime.'
         }
-    }
-    # Optional audit dependencies are intentionally not opened, executed, or required here.
-    if ($settings.auditConfigPath -isnot [string] -or -not [IO.Path]::IsPathRooted($settings.auditConfigPath)) {
-        throw 'auditConfigPath must be an explicit absolute path (the audit file may be unavailable).'
     }
     $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($settings.certificate.path)
     $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
@@ -78,7 +71,7 @@ $adapted = Invoke-PortalReadOnlyProbe -Executable $settings.caddy.path -Argument
 ) -WorkingDirectory (Split-Path $settings.caddyConfig.path -Parent) -Marker $settings.caddyConfig.path
 $null = ($adapted | Out-String | ConvertFrom-Json)
 $null = Invoke-PortalReadOnlyProbe -Executable $settings.python.path -Arguments @(
-    '-I', '-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); import plugin_portal.server; import plugin_portal.audit_config', $settings.runtime.path
+    '-I', '-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); import plugin_portal.server; import plugin_portal.archive_audit', $settings.runtime.path
 ) -WorkingDirectory $settings.runtime.path -Marker $settings.runtime.path
 $null = Invoke-PortalReadOnlyProbe -Executable $settings.python.path -Arguments @(
     '-I', '-B', '-c', 'import sys,json; sys.path.insert(0,sys.argv[1]); from plugin_portal.launcher_config import validate_caddy_candidate; validate_caddy_candidate(json.load(sys.stdin.buffer),sys.argv[2])',
@@ -87,7 +80,7 @@ $null = Invoke-PortalReadOnlyProbe -Executable $settings.python.path -Arguments 
 # Recheck both candidate config and dependency hashes after the independent tests.
 $settings = Read-PortalConfiguration
 if (-not $Run) {
-    [pscustomobject]@{ Status = 'validated'; Activated = $false; AuditDependency = 'checked-on-use'; Port = 9135 } | ConvertTo-Json -Compress
+    [pscustomobject]@{ Status = 'validated'; Activated = $false; AuditDependency = 'portal-runtime'; Port = 9135 } | ConvertTo-Json -Compress
     return
 }
 Assert-PortalOffline
@@ -102,7 +95,7 @@ $startPair = {
         '-E', '-s', '-B', '-m', 'plugin_portal', 'serve', '--remote-management', '--host', '127.0.0.1', '--port', '9135',
         '--https-origin', $origin, '--data-root', $settings.dataRoot, '--web-root', (Join-Path $settings.runtime.path 'dist')
     ) -WorkingDirectory $settings.runtime.path -Marker '--remote-management' -LogPrefix (Join-Path $runRoot "backend-$script:sequence") `
-        -Environment @{ PORTAL_AUDIT_CONFIG = $settings.auditConfigPath; PYTHONDONTWRITEBYTECODE = '1' }
+        -Environment @{ PYTHONDONTWRITEBYTECODE = '1' }
     $children.Add($backend)
     Wait-PortalOwnedListener $backend '127.0.0.1'
     $proxy = Start-PortalOwnedChild -Executable $settings.caddy.path -Arguments @(

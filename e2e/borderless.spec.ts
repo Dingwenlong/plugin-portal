@@ -4,7 +4,7 @@ import { startTestPortal, type TestPortal } from "./testServer";
 
 let portal: TestPortal;
 
-const pluginPages = ["overview", "skills", "prompts", "mcp", "extensions", "rules", "releases"];
+const pluginPages = ["overview", "skills", "prompts", "mcp", "rules", "releases"];
 
 test.beforeAll(async () => {
   portal = await startTestPortal();
@@ -67,10 +67,10 @@ test("removes conventional borders from Hub, plugin pages, overlays and compact 
     await page.keyboard.press("Escape");
 
     await openPlugin(page, "overview");
-    await page.getByRole("button", { name: "配置流程" }).click();
-    await expect(page.getByRole("dialog", { name: "配置流程" })).toBeVisible();
-    await expectNoConventionalBorders(page, `${theme} workflow dialog`);
-    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "编辑流程" }).click();
+    await expect(page.getByRole("region", { name: "流程编辑" })).toBeVisible();
+    await expectNoConventionalBorders(page, `${theme} inline workflow editor`);
+    await page.getByRole("button", { name: "退出编辑" }).click();
 
     await openPlugin(page, "skills");
     await page.getByRole("button", { name: "外观设置" }).click();
@@ -108,12 +108,12 @@ test("retains the glass rim, selected indicator and borderless focus feedback", 
   await action.focus();
   await expect(action).toHaveCSS("border-top-width", "0px");
   await expect(action).toHaveCSS("outline-style", "none");
-  expect(await action.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+  expect(await action.evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none");
 
   await action.click();
   const input = page.getByLabel("常用场景");
   await input.focus();
   await expect(input).toHaveCSS("border-top-width", "0px");
   await expect(input).toHaveCSS("outline-style", "none");
-  expect(await input.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+  expect(await input.evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none");
 });

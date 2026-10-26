@@ -16,6 +16,28 @@ POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
 @unittest.skipUnless(os.name == "nt" and POWERSHELL, "Windows process identity checks require PowerShell and CIM")
 class PersistentLauncherTests(unittest.TestCase):
+    def test_core_schema_accepts_upgrade_without_audit_config_and_rejects_unknown_fields(self):
+        result = self.invoke("""
+$settings = [pscustomobject]@{
+    schemaVersion='1.0.0';runtime=@{};python=@{};caddy=@{};caddyConfig=@{};certificate=@{};
+    dataRoot='data';logRoot='logs';lanAddress='192.168.1.1';maxRestarts=0;restartDelaySeconds=1
+}
+Assert-PortalCoreConfigurationSchema $settings
+$settings | Add-Member NoteProperty auditConfigPath 'unavailable-old-config'
+Assert-PortalCoreConfigurationSchema $settings
+$settings | Add-Member NoteProperty skipValidation $true
+$rejected = $false
+try { Assert-PortalCoreConfigurationSchema $settings } catch { $rejected = $true }
+if (-not $rejected) { throw 'Unexpected configuration key accepted.' }
+$settings.PSObject.Properties.Remove('skipValidation')
+$settings.PSObject.Properties.Remove('runtime')
+$rejected = $false
+try { Assert-PortalCoreConfigurationSchema $settings } catch { $rejected = $true }
+if (-not $rejected) { throw 'Missing core runtime accepted.' }
+'passed'
+""")
+        self.assertIn("passed", result)
+
     def invoke(self, body: str):
         with tempfile.TemporaryDirectory(prefix="portal-supervisor-test-") as temporary:
             root = Path(temporary)

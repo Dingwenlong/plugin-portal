@@ -21,6 +21,9 @@ function createClient(): PortalDataClient {
     },
   ];
   return {
+    getContent: async (pluginKey, kind) => ({ revision: 0, pluginKey, documentType: kind, document: null }),
+    previewContent: async () => { throw new Error("not configured"); },
+    confirmContent: async () => { throw new Error("not configured"); },
     getAccessMode: async () => ({ readOnly: false, fileSelectionMode: "server-picker" }),
     listPlugins: async () => ({ revision: 2, items: plugins }),
     getSnapshot: async (pluginKey) => ({
@@ -73,6 +76,51 @@ function createClient(): PortalDataClient {
 }
 
 describe("PortalShell", () => {
+  it.each([
+    ["#/plugins/project-delivery-hub/prompts", "company-internal", "4.3.6"],
+    ["#/plugins/company-internal%2Fproject-delivery-hub/prompts", "company-internal", "4.3.6"],
+    ["#/plugins/company-dev%2Fproject-delivery-hub/prompts", "company-dev", "3.7.17"],
+  ])("binds duplicate plugin IDs to the correct source for %s", async (hash, target, version) => {
+    const client = createClient();
+    const catalog = await client.listPlugins();
+    const old = catalog.items[0];
+    client.listPlugins = async () => ({ ...catalog, items: [...catalog.items, {
+      ...old, pluginKey: "company-internal/project-delivery-hub", version: "4.3.6",
+    }] });
+    const originalSnapshot = client.getSnapshot;
+    const snapshot = vi.spyOn(client, "getSnapshot").mockImplementation(async () => {
+      const value = await originalSnapshot(old.pluginKey);
+      return { ...value, plugin: { ...value.plugin, target, version } };
+    });
+    const prompts = vi.spyOn(client, "getPrompts");
+    const workflow = vi.spyOn(client, "getWorkflows");
+    const download = vi.spyOn(client, "getDownloadInfo").mockResolvedValue({
+      available: true, version, href: `/api/plugins/${encodeURIComponent(`${target}/project-delivery-hub`)}/download`,
+    });
+    render(<PortalShell client={client} initialHash={hash} />);
+    expect(await screen.findByRole("link", { name: `下载最新版 v${version}` })).toHaveAttribute("href", `/api/plugins/${encodeURIComponent(`${target}/project-delivery-hub`)}/download`);
+    const expectedKey = `${target}/project-delivery-hub`;
+    for (const read of [snapshot, prompts, workflow, download]) {
+      expect(read).toHaveBeenCalledWith(expectedKey, expect.any(AbortSignal));
+    }
+    expect(screen.getByRole("link", { name: "Skills" })).toHaveAttribute("href", `#/plugins/${encodeURIComponent(expectedKey)}/skills`);
+  });
+  it.each(["#/club", "#/hub"])("opens the plugin list at the canonical club route from %s", async (hash) => {
+    const before = window.location.hash;
+    window.history.replaceState(null, "", hash);
+    const historyLength = window.history.length;
+    const view = render(<PortalShell client={createClient()} />);
+    try {
+      expect(await screen.findByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
+      expect(window.location.hash).toBe("#/club");
+      expect(window.history.length).toBe(historyLength);
+      expect(view.container.querySelector('[data-hub-entry-phase="hub"]')).toBeInTheDocument();
+    } finally {
+      view.unmount();
+      window.history.replaceState(null, "", before || "#/");
+    }
+  });
+
   it("keeps navigation when one resource fails and retries only that resource", async () => {
     const client = createClient();
     const snapshot = vi.spyOn(client, "getSnapshot");
@@ -154,7 +202,7 @@ describe("PortalShell", () => {
     fireEvent.click(settings);
     fireEvent.click(within(screen.getByRole("group", { name: "主题设置" })).getByRole("button", { name: "切换为浅色" }));
     expect(document.documentElement).toHaveAttribute("data-portal-theme", "light");
-    expect(screen.queryByRole("button", { name: /配置流程|新增 Prompt/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /编辑流程|新增 Prompt/ })).not.toBeInTheDocument();
   });
 
   it("changes theme without replacing the page, an open Prompt draft, scroll position or focus", async () => {
@@ -203,7 +251,7 @@ describe("PortalShell", () => {
       } else {
         expect(await screen.findByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
       }
-      expect(screen.queryByRole("button", { name: /纳入插件|配置流程|新增 Prompt|编辑|删除/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /纳入插件|编辑流程|新增 Prompt|编辑|删除/ })).not.toBeInTheDocument();
     },
   );
 
@@ -243,11 +291,11 @@ describe("PortalShell", () => {
     expect(await screen.findByRole("button", { name: "纳入插件" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "研发助手插件" })).toHaveAttribute(
       "href",
-      "#/plugins/project-delivery-hub/overview",
+      "#/plugins/company-dev%2Fproject-delivery-hub/overview",
     );
     expect(screen.getByRole("link", { name: "昱勝 Inc" })).toHaveAttribute(
       "href",
-      "#/plugins/yusheng-inc/overview",
+      "#/plugins/company-dev%2Fyusheng-inc/overview",
     );
     expect(screen.queryByLabelText("插件管理")).not.toBeInTheDocument();
     expect(screen.queryAllByRole("button", { name: /^管理 / })).toHaveLength(0);
@@ -379,7 +427,7 @@ describe("PortalShell", () => {
     expect(screen.queryByRole("link", { name: "鸟瞰全景" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "昱勝 Inc" })).toHaveAttribute(
       "href",
-      "#/plugins/yusheng-inc/overview",
+      "#/plugins/company-dev%2Fyusheng-inc/overview",
     );
 
     rerender(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/prompts" />);
@@ -387,18 +435,41 @@ describe("PortalShell", () => {
     expect(screen.queryByText("昱勝 Prompt")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Prompts" })).toHaveAttribute(
       "href",
-      "#/plugins/project-delivery-hub/prompts",
+      "#/plugins/company-dev%2Fproject-delivery-hub/prompts",
     );
   });
 
-  it("opens workflow configuration as a dialog from the overview only", async () => {
+  it("opens workflow editing in place without a dialog", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
-    const trigger = await screen.findByRole("button", { name: "配置流程" });
-    expect(trigger.closest(".portal-page-actions")).not.toBeNull();
+    const trigger = await screen.findByRole("button", { name: "编辑流程" });
+    expect(trigger.closest("main")).not.toBeNull();
+    expect(trigger.closest("header")).toBeNull();
+    trigger.focus();
     fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "流程编辑" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新增 Tab" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "编辑流程" })).toHaveFocus());
+  });
+
+  it("carries the current overview tab into editing and back", async () => {
+    const client = createClient();
+    client.getWorkflows = async (pluginKey) => ({ revision: 4, pluginKey, tabs: [
+      { id: "install", title: "插件安装", sections: [] },
+      { id: "design", title: "设计交付", sections: [{ id: "section", title: "设计步骤", steps: [
+        { id: "design-step", label: "设计", title: "编写设计", description: "保持上下文", next: [] },
+      ] }] },
+    ] });
+    render(<PortalShell client={client} initialHash="#/plugins/project-delivery-hub/overview" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "设计交付" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑流程" }));
+    expect(screen.getAllByRole("tab", { name: "设计交付" })).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "设计交付" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("步骤标题")).toHaveValue("编写设计");
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    expect(screen.getByRole("tab", { name: "设计交付" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "编写设计" })).toBeInTheDocument();
   });
 
   it("replaces the sidebar and page heading with one floating capsule", async () => {
@@ -412,16 +483,16 @@ describe("PortalShell", () => {
     expect(within(capsule).getByRole("link", { name: "研发助手插件" })).toBeInTheDocument();
     expect(within(capsule).getByRole("navigation", { name: "插件内容" })).toBeInTheDocument();
     expect(await within(capsule).findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
-    expect(await within(capsule).findByRole("button", { name: "配置流程" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "编辑流程" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole("main", { name: "鸟瞰全景" })).toBeInTheDocument();
   });
 
-  it("mounts page-owned Prompt actions in the capsule without losing modal focus restoration", async () => {
+  it("keeps page-owned Prompt actions in the content area without losing modal focus restoration", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/prompts" />);
 
     const capsule = await screen.findByRole("banner", { name: "插件导航" });
-    const trigger = await within(capsule).findByRole("button", { name: "新增 Prompt" });
+    const trigger = await screen.findByRole("button", { name: "新增 Prompt" });
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "新增 Prompt" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -434,7 +505,9 @@ describe("PortalShell", () => {
     const download = await screen.findByRole("link", { name: "下载最新版 v3.7.17" });
     const actions = download.closest(".portal-capsule-actions")!;
     expect(actions.lastElementChild).toBe(screen.getByRole("button", { name: "外观设置" }));
-    expect(download.previousElementSibling).toHaveClass("portal-page-actions");
+    expect(download.closest(".portal-capsule-actions")).not.toBeNull();
+    expect(document.querySelector("header .portal-page-action")).toBeNull();
+    expect(download.closest(".portal-capsule")!.querySelectorAll("[title]")).toHaveLength(0);
   });
 
   it("hides after sustained downward scrolling and restores on upward scrolling, focus and route changes", async () => {
@@ -535,7 +608,7 @@ describe("PortalShell", () => {
     }
   });
 
-  it("offers the same six links from the compact navigation and restores focus when it closes", async () => {
+  it("offers the same five links from the compact navigation and restores focus when it closes", async () => {
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/mcp" />);
 
     const capsule = await screen.findByRole("banner", { name: "插件导航" });
@@ -548,7 +621,7 @@ describe("PortalShell", () => {
     fireEvent.click(more);
     expect(more).toHaveAttribute("aria-expanded", "true");
     expect(navigation).toHaveAttribute("data-expanded", "true");
-    expect(within(navigation).getAllByRole("link")).toHaveLength(6);
+    expect(within(navigation).getAllByRole("link")).toHaveLength(5);
     expect(within(navigation).getByRole("link", { name: "MCP" })).toHaveAttribute("aria-current", "page");
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -567,18 +640,26 @@ describe("PortalShell", () => {
     expect(more).toHaveFocus();
   });
 
-  it("forces a hidden capsule back into view while a modal is open", async () => {
+  it("keeps the capsule visible throughout editing and nested exit confirmation", async () => {
+    const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
     render(<PortalShell client={createClient()} initialHash="#/plugins/project-delivery-hub/overview" />);
     const capsule = await screen.findByRole("banner", { name: "插件导航" });
-    const trigger = await within(capsule).findByRole("button", { name: "配置流程" });
+    const trigger = await screen.findByRole("button", { name: "编辑流程" });
 
     Object.defineProperty(window, "scrollY", { configurable: true, value: 70 });
     fireEvent.scroll(window);
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "hidden"));
     fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "配置流程" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "流程编辑" })).toBeInTheDocument();
     await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+    fireEvent.click(screen.getByRole("button", { name: "新增 Tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 170 });
+    fireEvent.scroll(window);
+    await waitFor(() => expect(capsule).toHaveAttribute("data-visibility", "visible"));
+    scroll.mockRestore();
   });
 
   it("restores the plugin brand, navigation icons and overview download action", async () => {
@@ -593,7 +674,7 @@ describe("PortalShell", () => {
     expect(brand.querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("link", { name: "Skills" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("link", { name: "Prompts" }).querySelector("svg")).not.toBeNull();
-    expect(container.querySelectorAll("nav[aria-label='插件内容'] svg")).toHaveLength(6);
+    expect(container.querySelectorAll("nav[aria-label='插件内容'] svg")).toHaveLength(5);
     expect(await screen.findByRole("link", { name: "下载最新版 v3.7.17" })).toBeInTheDocument();
   });
 
@@ -649,7 +730,8 @@ describe("PortalShell", () => {
 
     const unavailable = await screen.findByRole("button", { name: "下载最新版 v1.1.4" });
     expect(unavailable).toBeDisabled();
-    expect(unavailable).toHaveAttribute("title", "该插件未提供可下载版本");
+    expect(unavailable).not.toHaveAttribute("title");
+    expect(unavailable).toHaveAttribute("aria-description", "该插件未提供可下载版本");
     expect(screen.queryByRole("link", { name: "下载最新版 v1.1.4" })).not.toBeInTheDocument();
   });
 });

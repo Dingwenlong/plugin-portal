@@ -86,11 +86,13 @@ class LanServerTests(unittest.TestCase):
         self.server.api.download_publisher = publisher
         with patch.object(self.server.api, "directory_picker", side_effect=AssertionError("picker called")):
             for method in ("POST", "PUT", "PATCH", "DELETE"):
-                for path in ("/api/session", "/api/plugins/import/preview", "/api/plugins/import/select-directory",
-                             self.path + "/promote", self.path + "/rollback",
+                for path in ("/api/session", "/api/plugins/order", "/api/plugins/import/preview", "/api/plugins/import/select-directory",
+                             self.path + "/promote", self.path + "/rollback", self.path + "/remove",
                              self.path + "/download-publication/select",
                              self.path + "/download-publication/confirm",
-                             self.path + "/prompts", self.path + "/workflows"):
+                             self.path + "/prompts", self.path + "/workflows",
+                             "/api/plugins/import/candidates/example/rules/read",
+                             "/api/plugins/import/candidates/example/rules/preview"):
                     with self.subTest(method=method, path=path):
                         status, _, body = self.request(path, method, {"X-Portal-Session": token}, b"not-json")
                         self.assertEqual(status, 403)

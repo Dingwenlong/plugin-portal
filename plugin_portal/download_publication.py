@@ -10,12 +10,15 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from dataclasses import dataclass
+import zipfile
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .models import ModelValidationError, canonical_json_bytes, parse_plugin_key
+from .bundle_inspection import BundleInspection, build_bundle_inspection
+from .plugin_archive import PluginArchiveError
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -55,6 +58,8 @@ class PluginReleaseAudit:
     tool_version: str
     status: str
     warnings: tuple[str, ...]
+    bundle_inspection: BundleInspection | None = None
+    tool_name: str = "plugin-release"
 
 
 class CandidateAuditor(Protocol):
@@ -304,11 +309,14 @@ class DownloadPublisher:
             "fileSetSha256": candidate.audit.file_set_sha256,
             "fileCount": candidate.audit.file_count,
             "archiveBytes": candidate.audit.archive_bytes,
+            "auditTool": candidate.audit.tool_name,
             "auditToolVersion": candidate.audit.tool_version,
             "auditStatus": candidate.audit.status,
             "warnings": list(candidate.audit.warnings),
             "publishedAtUtc": receipt.published_at_utc,
         }
+        if candidate.audit.bundle_inspection is not None:
+            payload["bundleInspection"] = candidate.audit.bundle_inspection.evidence()
         path = self.receipt_root / f"{uuid.uuid4().hex}.json"
         try:
             with path.open("xb") as stream:
@@ -463,6 +471,39 @@ class PluginReleaseAuditor:
     ) -> PluginReleaseAudit:
         if not _SHA256.fullmatch(expected_sha256):
             raise DownloadPublicationError("audit_contract_invalid", "候选摘要无效")
+        try:
+            with tempfile.TemporaryDirectory(prefix="portal-bundle-audit-") as temporary:
+                view_path = Path(temporary) / "inspection.zip"
+                inspection = build_bundle_inspection(path, view_path, plugin_id=plugin_id)
+                if inspection is None:
+                    return self._audit_archive(path, plugin_id=plugin_id, target=target, expected_sha256=expected_sha256)
+                if inspection.source_sha256 != expected_sha256:
+                    raise DownloadPublicationError("candidate_changed", "候选在审计前已改变")
+                audit = self._audit_archive(
+                    view_path, plugin_id=plugin_id, target=target, expected_sha256=inspection.inspection_sha256,
+                )
+                if (
+                    audit.file_set_sha256 != inspection.inspection_file_set_sha256
+                    or audit.file_count != inspection.file_count
+                    or audit.archive_bytes != inspection.inspection_bytes
+                ):
+                    raise DownloadPublicationError("audit_contract_invalid", "完整发行包审计覆盖不一致")
+                if DownloadPublisher._sha256(path) != expected_sha256:
+                    raise DownloadPublicationError("candidate_changed", "候选在审计期间已改变")
+                return replace(
+                    audit, candidate_sha256=expected_sha256, archive_bytes=inspection.source_bytes,
+                    file_set_sha256=inspection.source_file_set_sha256, bundle_inspection=inspection,
+                )
+        except PluginArchiveError as error:
+            raise DownloadPublicationError("candidate_rejected", str(error)) from None
+        except (OSError, RuntimeError, EOFError, NotImplementedError, zipfile.BadZipFile, zipfile.LargeZipFile) as error:
+            if isinstance(error, DownloadPublicationError):
+                raise
+            raise DownloadPublicationError("candidate_rejected", "完整发行包无法读取或生成审计视图") from None
+
+    def _audit_archive(
+        self, path: Path, *, plugin_id: str, target: str, expected_sha256: str,
+    ) -> PluginReleaseAudit:
         version, script = self._resolve_script()
         command = [
             self.python_executable,
@@ -655,6 +696,7 @@ class PluginReleaseAuditor:
             tool_version=expected_tool_version,
             status=payload["status"],
             warnings=tuple(warnings),
+            tool_name=expected_tool_name,
         )
 
     @staticmethod

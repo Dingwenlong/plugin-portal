@@ -11,10 +11,10 @@ import {
 import { Plus } from "lucide-react";
 
 import { PluginManager, type PluginManagementClient } from "../portal/PluginManager";
-import { PluginBrandIcon } from "../portal/PluginBrandIcon";
 import { PortalModal } from "../portal/PortalModal";
 import { ThemeToggle } from "../portal/PortalTheme";
-import { portalHref } from "../portal/routes";
+import { HubPluginEntries } from "./HubPluginEntries";
+import { HubPluginActions } from "./HubPluginActions";
 import type { PluginCatalog, PortalAccess } from "../portal/types";
 import { CoverAccretionBackground } from "./CoverAccretionBackground";
 import {
@@ -78,7 +78,7 @@ function HubList({
       </div>
       <section className="company-dev-hub-section" data-hub-section="plugins">
         <div className="company-dev-hub-section-heading">
-          <h2>插件</h2>
+          <h2>Plugin Family</h2>
           {!readOnly && <button
             aria-label="纳入插件"
             className="company-dev-hub-include"
@@ -93,21 +93,7 @@ function HubList({
           {loading.status === "loading" && <p role="status">正在读取插件…</p>}
           {catalog.items.length === 0 && loading.status === "ready"
             ? <p className="company-dev-hub-empty">尚未纳入插件</p>
-            : catalog.items.map((item, index) => <div className="company-dev-hub-entry-row" key={item.pluginKey}>
-                <a
-                  className="company-dev-hub-entry"
-                  aria-label={item.name}
-                  href={portalHref(item.id, "overview")}
-                  ref={index === 0 ? firstEntryRef : undefined}
-                  tabIndex={interactive ? 0 : -1}
-                  data-hub-entry={item.id}
-                >
-                  <span className="company-dev-hub-entry-identity">
-                    <PluginBrandIcon pluginKey={item.pluginKey} revision={catalog.revision} />
-                    <span>{item.name}</span>
-                  </span>
-                </a>
-              </div>)}
+            : <HubPluginEntries catalog={catalog} interactive={interactive} firstEntryRef={firstEntryRef} />}
         </div>
       </section>
     </div>
@@ -439,6 +425,7 @@ export function HubEntry({
   const [including, setIncluding] = useState(false);
 
   return <HubLoadContext.Provider value={{ status: catalogStatus, error: catalogError, retry: onRetryCatalog }}>
+    <HubPluginActions catalog={catalog} client={client} enabled={!managementReadOnly && !including && route === "hub"} onCatalogChanged={onCatalogChanged}>
     <InteractiveHub
       readOnly={managementReadOnly}
       catalog={catalog}
@@ -446,6 +433,7 @@ export function HubEntry({
       onNavigate={onNavigate}
       onInclude={() => setIncluding(true)}
     />
+    </HubPluginActions>
     {!managementReadOnly && including ? <PortalModal title="纳入插件" onClose={() => setIncluding(false)}>
         <PluginManager
           catalogRevision={catalog.revision}

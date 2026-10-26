@@ -8,7 +8,6 @@
   "dataRoot": "C:/PortalCandidate/data",
   "logRoot": "C:/PortalCandidate/logs",
   "lanAddress": "192.168.1.100",
-  "auditConfigPath": "C:/PortalCandidate/audit-config.json",
   "maxRestarts": 2,
   "restartDelaySeconds": 2
 }

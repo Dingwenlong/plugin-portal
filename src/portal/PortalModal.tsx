@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import { usePortalModalPresence } from "./PortalPageAction";
+import { usePortalModalPresence } from "./PortalPresence";
 
 const ModalGuard = createContext<((guard: { dirty: boolean; busy: boolean }) => void) | undefined>(undefined);
 const ModalClose = createContext<(() => void) | undefined>(undefined);
-const NAVIGATION_EVENT = "portal-before-navigation";
+export const PORTAL_NAVIGATION_EVENT = "portal-before-navigation";
 export function requestPortalNavigation(proceed: () => void): boolean {
-  return window.dispatchEvent(new CustomEvent(NAVIGATION_EVENT, { cancelable: true, detail: proceed }));
+  return window.dispatchEvent(new CustomEvent(PORTAL_NAVIGATION_EVENT, { cancelable: true, detail: proceed }));
 }
 export function ModalCancelButton() {
   return <button onClick={useContext(ModalClose)} type="button">取消</button>;
@@ -27,6 +27,8 @@ export function PortalModal({
   dirty = false,
   busy = false,
   returnFocusRef,
+  imageViewer = false,
+  headerActions,
 }: {
   title: string;
   onClose: () => void;
@@ -35,6 +37,8 @@ export function PortalModal({
   dirty?: boolean;
   busy?: boolean;
   returnFocusRef?: RefObject<HTMLElement | null>;
+  imageViewer?: boolean;
+  headerActions?: ReactNode;
 }) {
   usePortalModalPresence();
   const titleId = useId();
@@ -68,10 +72,10 @@ export function PortalModal({
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (guard.busy || busy || guard.dirty || dirty) { event.preventDefault(); event.returnValue = ""; }
     };
-    window.addEventListener(NAVIGATION_EVENT, beforeNavigation);
+    window.addEventListener(PORTAL_NAVIGATION_EVENT, beforeNavigation);
     window.addEventListener("beforeunload", beforeUnload);
     return () => {
-      window.removeEventListener(NAVIGATION_EVENT, beforeNavigation);
+      window.removeEventListener(PORTAL_NAVIGATION_EVENT, beforeNavigation);
       window.removeEventListener("beforeunload", beforeUnload);
     };
   }, [guard, busy, dirty, onClose]);
@@ -124,13 +128,14 @@ export function PortalModal({
       <section
         aria-labelledby={titleId}
         aria-modal="true"
-        className={`portal-modal${wide ? " portal-modal-wide" : ""}`}
+        className={`portal-modal${wide ? " portal-modal-wide" : ""}${imageViewer ? " portal-modal-image-viewer" : ""}`}
         ref={dialogRef}
         role="dialog"
         tabIndex={-1}
       >
         <header>
           <h2 id={titleId}>{title}</h2>
+          {headerActions}
           <button aria-label="关闭" disabled={guard.busy || busy} onClick={requestClose} type="button">×</button>
         </header>
         {confirmClose && <div className="portal-resource-notice" role="alert">

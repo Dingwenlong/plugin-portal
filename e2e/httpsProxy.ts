@@ -42,6 +42,7 @@ export async function startIsolatedHttpsProxy(
   // also reserve UDP for Caddy's otherwise automatic HTTP/3 listener.
   writeFileSync(configPath, `{
   admin off
+  persist_config off
   auto_https disable_redirects
   skip_install_trust
   servers {
@@ -53,6 +54,7 @@ export async function startIsolatedHttpsProxy(
 }
 
 https://127.0.0.1:${proxyPort} {
+  bind 127.0.0.1
   tls internal
   reverse_proxy 127.0.0.1:${backendPort}
 }
@@ -60,6 +62,8 @@ https://127.0.0.1:${proxyPort} {
 
   const child = spawn(executable, ["run", "--config", configPath, "--adapter", "caddyfile"], {
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    env: { ...process.env, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data") },
   }) as ChildProcessWithoutNullStreams;
   const output: string[] = [];
   child.stdout.on("data", (chunk) => output.push(String(chunk)));

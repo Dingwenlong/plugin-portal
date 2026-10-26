@@ -1,0 +1,44 @@
+.hub-plugin-context-menu {
+  position: fixed;
+  z-index: 1100;
+  min-width: 148px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 10px;
+  background: var(--popover);
+  box-shadow: 0 8px 28px #0003;
+}
+
+.hub-plugin-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.hub-plugin-context-menu button:hover,
+.hub-plugin-context-menu button:focus-visible { background: var(--selected); }
+.hub-plugin-context-menu button:focus-visible { outline: 2px solid var(--error); outline-offset: -2px; }
+.hub-plugin-context-menu .hub-plugin-delete-action { color: var(--error); }
+.hub-plugin-entry-main { display: flex; align-items: center; gap: 8px; }
+.hub-plugin-entry-main > a { flex: 1; }
+.hub-plugin-sort-handle { flex: 0 0 auto; padding: 8px; width: 32px; height: 36px; min-height: 0; display: grid; place-items: center; cursor: grab; background: transparent; color: var(--muted); }
+.hub-plugin-sort-handle:active { cursor: grabbing; }
+.company-dev-hub-entry-row[data-dragging] { opacity: .55; }
+.company-dev-hub-entry-row[data-drop-position="before"] { box-shadow: 0 -3px 0 var(--accent); }
+.company-dev-hub-entry-row[data-drop-position="after"] { box-shadow: 0 3px 0 var(--accent); }
+.hub-plugin-order-feedback { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; max-width: calc(100vw - 32px); padding: 12px 20px; background: var(--dialog); color: var(--text); border-radius: 10px; box-shadow: var(--modal-shadow); }
+.hub-plugin-order-feedback p { margin: 0; }
+.hub-plugin-order-feedback button { margin-top: 8px; }
+.hub-plugin-removal { display: grid; gap: 18px; }
+.hub-plugin-removal p { margin: 0; color: var(--muted); line-height: 1.7; }
+.hub-plugin-removal-identity { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.hub-plugin-removal-identity span:last-child { flex-basis: 100%; overflow-wrap: anywhere; color: var(--muted); }
+.hub-plugin-removal-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.hub-plugin-removal-actions .hub-plugin-delete-confirm { background: #b42323; color: #fff; }

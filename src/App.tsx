@@ -17,7 +17,6 @@ const NAVIGATION: ReadonlyArray<{ page: PortalPage; label: string }> = [
   { page: "skills", label: "Skills" },
   { page: "prompts", label: "Prompts" },
   { page: "mcp", label: "MCP" },
-  { page: "extensions", label: "扩展工具" },
   { page: "rules", label: "工程规范" },
   { page: "releases", label: "版本沿革" },
 ];
@@ -27,7 +26,6 @@ const EMPTY_COPY: Record<PortalPage, string> = {
   skills: "该插件未提供 Skills",
   prompts: "尚未添加 Prompt",
   mcp: "该插件未提供 MCP",
-  extensions: "该插件未配置扩展工具",
   rules: "该插件未提供公开工程规范",
   releases: "该插件尚无导入记录",
 };

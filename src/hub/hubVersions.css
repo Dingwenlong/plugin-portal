@@ -1,0 +1,5 @@
+.hub-plugin-version { margin-left: auto; padding-left: 16px; color: var(--muted); white-space: nowrap; font-weight: 500; }
+.hub-plugin-alternatives { padding: 0 0 10px 40px; color: var(--muted); font-size: 13px; }
+.hub-plugin-alternatives summary { width: fit-content; cursor: pointer; }
+.hub-plugin-alternatives a { display: block; width: fit-content; margin-top: 10px; color: var(--text); text-underline-offset: 3px; }
+.hub-plugin-alternatives :focus-visible { outline: 2px solid var(--text); outline-offset: 4px; }

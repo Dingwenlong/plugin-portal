@@ -92,7 +92,11 @@ export interface WorkflowStep {
   title: string;
   description: string;
   next: string[];
+  images?: WorkflowImage[];
 }
+
+export interface WorkflowImage { assetId: string; alt: string; title?: string }
+export interface WorkflowImageReceipt { assetId: string; width: number; height: number }
 
 export interface WorkflowSection {
   id: string;
@@ -141,12 +145,31 @@ export interface PluginImportCandidate {
   candidateId: string;
   pluginKey: string;
   snapshot: PluginSnapshot;
+  importOptions?: {
+    marketplace: string | null;
+    currentVersion: string | null;
+    catalogRevision: number;
+    rules: ImportRuleChoice[];
+    rulesTruncated: boolean;
+  };
+}
+
+export interface ImportRuleChoice {
+  path: string;
+  title: string;
+  available: boolean;
+  reason: string | null;
 }
 
 export interface PluginMutationReceipt {
   revision: number;
   pluginKey: string;
   snapshotId: string;
+}
+
+export interface PluginRemovalReceipt {
+  revision: number;
+  pluginKey: string;
 }
 
 export interface DownloadPublicationPreview {

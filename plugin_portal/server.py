@@ -17,7 +17,7 @@ from urllib.parse import quote, unquote, urlsplit
 from .api import ApiError, PortalApi
 from .directory_picker import choose_plugin_archive, choose_plugin_directory
 from .download_publication import DownloadPublisher, read_9134_download
-from .audit_config import ConfiguredPluginReleaseAuditor
+from .archive_audit import PortalArchiveAuditor
 from .lan_download import read_download
 from .storage import PortalStore
 from .uploads import UploadRegistry
@@ -112,7 +112,7 @@ def create_server(
         publisher = DownloadPublisher(
             download_root=_default_download_root(),
             receipt_root=store.root / "download-publications",
-            auditor=ConfiguredPluginReleaseAuditor(),
+            auditor=PortalArchiveAuditor(),
             download_reader=read_9134_download,
         )
     return PortalHTTPServer(
@@ -191,6 +191,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
     server: PortalHTTPServer
     protocol_version = "HTTP/1.1"
     _PROMOTE = re.compile(r"^/api/plugins/([^/]+)/promote$")
+    _REMOVE_PLUGIN = re.compile(r"^/api/plugins/([^/]+)/remove$")
     _ROLLBACK = re.compile(r"^/api/plugins/([^/]+)/rollback$")
     _SNAPSHOT = re.compile(r"^/api/plugins/([^/]+)/snapshot$")
     _ICON = re.compile(r"^/api/plugins/([^/]+)/icon$")
@@ -200,8 +201,12 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
     _DOWNLOAD_PUBLICATION_UPLOAD = re.compile(r"^/api/plugins/([^/]+)/download-publication/upload$")
     _DOWNLOAD_PUBLICATION_CONFIRM = re.compile(r"^/api/plugins/([^/]+)/download-publication/confirm$")
     _PROMPTS = re.compile(r"^/api/plugins/([^/]+)/prompts$")
+    _CONTENT = re.compile(r"^/api/plugins/([^/]+)/content/(mcp|releases)(?:/(template|export|preview|confirm))?$")
     _WORKFLOWS = re.compile(r"^/api/plugins/([^/]+)/workflows$")
+    _WORKFLOW_IMAGE_UPLOAD = re.compile(r"^/api/plugins/([^/]+)/workflows/images$")
+    _WORKFLOW_IMAGE = re.compile(r"^/api/plugins/([^/]+)/workflows/images/([0-9a-f]{64})/(full|thumb)$")
     _PLUGIN_IMPORT_UPLOAD = "/api/uploads/plugin-import"
+    _IMPORT_RULES = re.compile(r"^/api/plugins/import/candidates/([A-Za-z0-9_-]+)/rules/(read|preview)$")
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._same_origin():
@@ -219,6 +224,39 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/plugins":
             self._call_api(self.server.api.list_plugins)
+            return
+        match = self._CONTENT.fullmatch(path)
+        if match:
+            key, kind, action = unquote(match.group(1)), match.group(2), match.group(3)
+            if action is None:
+                self._call_api(lambda: self.server.api.get_content(key, kind))
+            elif action in {"template", "export"}:
+                try:
+                    value = self.server.api.download_content(key, kind, action == "template")
+                except ApiError as error:
+                    self._send_api_error(error)
+                    return
+                payload = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{key.replace("/", "-")}-{kind}-{action}.json"')
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(payload)
+            else:
+                self._send_error(404, "not_found", "页面不存在")
+            return
+        match = self._WORKFLOW_IMAGE.fullmatch(path)
+        if match:
+            try:
+                content_type, payload = self.server.api.get_workflow_image(unquote(match.group(1)), match.group(2), match.group(3))
+            except ApiError as error:
+                self._send_api_error(error)
+                return
+            self._send_bytes(HTTPStatus.OK, payload, content_type)
             return
         match = self._SNAPSHOT.fullmatch(path)
         if match:
@@ -257,7 +295,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         self._serve_static(path)
 
     def do_HEAD(self) -> None:  # noqa: N802
-        if self.server.external_mode:
+        if self.server.external_mode or self._WORKFLOW_IMAGE.fullmatch(urlsplit(self.path).path):
             self.do_GET()
             return
         if not self._same_origin():
@@ -273,6 +311,10 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.FORBIDDEN, "cross_origin", "不允许跨来源访问")
             return
         path = urlsplit(self.path).path
+        match = self._WORKFLOW_IMAGE_UPLOAD.fullmatch(path)
+        if match:
+            self._upload_workflow_image(unquote(match.group(1)))
+            return
         if path == self._PLUGIN_IMPORT_UPLOAD:
             if self.server.access_mode != "remote-management":
                 self.close_connection = True
@@ -301,6 +343,24 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
             return
 
         token = self.headers.get("X-Portal-Session", "")
+        if path == "/api/plugins/order":
+            self._call_api(lambda: self.server.api.reorder_plugins(token, body))
+            return
+        match = self._IMPORT_RULES.fullmatch(path)
+        if match:
+            operation = self.server.api.read_import_rule if match.group(2) == "read" else self.server.api.preview_import_rules
+            self._call_api(lambda: operation(token, match.group(1), body))
+            return
+        match = self._CONTENT.fullmatch(path)
+        if match:
+            key, kind, action = unquote(match.group(1)), match.group(2), match.group(3)
+            if action == "preview":
+                self._call_api(lambda: self.server.api.preview_content(token, key, kind, body))
+            elif action == "confirm":
+                self._call_api(lambda: self.server.api.confirm_content(token, key, kind, body))
+            else:
+                self._send_error(404, "not_found", "页面不存在")
+            return
         if path == "/api/plugins/import/select-directory":
             self._call_api(lambda: self.server.api.select_plugin_directory(token, body))
             return
@@ -323,6 +383,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         for pattern, operation in (
             (self._PROMOTE, self.server.api.promote),
             (self._ROLLBACK, self.server.api.rollback),
+            (self._REMOVE_PLUGIN, self.server.api.remove_plugin),
             (self._PROMPTS, self.server.api.save_prompts),
             (self._WORKFLOWS, self.server.api.save_workflows),
         ):
@@ -332,6 +393,24 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
                 self._call_api(lambda operation=operation: operation(token, plugin_key, body))
                 return
         self._send_error(HTTPStatus.NOT_FOUND, "not_found", "页面不存在")
+
+    def _upload_workflow_image(self, plugin_key: str) -> None:
+        previous_timeout = self.connection.gettimeout()
+        try:
+            lengths = self.headers.get_all("Content-Length")
+            if self.headers.get("Transfer-Encoding") or not lengths or len(lengths) != 1 or not lengths[0].isdigit():
+                raise ApiError("图片上传长度无效", code="image_invalid")
+            self.connection.settimeout(30)
+            receipt = self.server.api.upload_workflow_image(
+                self.headers.get("X-Portal-Session", ""), plugin_key,
+                self.headers.get("Content-Type", ""), self.rfile, int(lengths[0]),
+            )
+            self._send_json(HTTPStatus.CREATED, receipt)
+        except ApiError as error:
+            self.close_connection = True
+            self._send_api_error(error)
+        finally:
+            self.connection.settimeout(previous_timeout)
 
     def _upload_archive(self, kind: str, plugin_key: str | None = None) -> None:
         try:
@@ -447,6 +526,7 @@ class PortalRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             raise ApiError("Content-Length 无效") from None
         if length < 0 or length > 1024 * 1024:
+            self.close_connection = True
             raise ApiError("请求资料过大", status=413, code="payload_too_large")
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))

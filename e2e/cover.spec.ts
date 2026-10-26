@@ -84,6 +84,9 @@ test.describe("original cover", () => {
     });
     await start.press("Enter");
     const cover = page.locator("[data-hub-cover]");
+    // The default mode is already "scaled" during asynchronous preparation.
+    // Measure only once the prepared canvas actually enters its scale animation.
+    await expect(page.locator("[data-hub-entry-phase]")).toHaveAttribute("data-hub-entry-phase", "engulfing");
     await expect(cover).toHaveAttribute("data-transition-mode", "scaled");
     const presentation = await buttonCanvas.evaluate((canvas: HTMLCanvasElement) => ({
       backingWidth: canvas.width,
@@ -158,12 +161,12 @@ test.describe("original cover", () => {
   });
 
   test("recreates and removes the cover on repeated visits in the same page", async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width: 768, height: 540 });
     await page.goto(`${portal.baseUrl}/#/hub`);
-    for (let visit = 0; visit < 3; visit += 1) {
+    for (let visit = 0; visit < 10; visit += 1) {
       await page.evaluate(() => { window.location.hash = "#/"; });
       const start = page.getByRole("button", { name: "Start" });
       await expect(start).toBeEnabled({ timeout: 12_000 });

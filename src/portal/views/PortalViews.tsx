@@ -19,11 +19,9 @@ import { useRef, useState } from "react";
 import { ModalCancelButton, PortalModal } from "../PortalModal";
 import { useSaveRecovery } from "../useSaveRecovery";
 import { SaveFeedback } from "../SaveFeedback";
-import { PortalPageAction } from "../PortalPageAction";
 import type { PluginSnapshot, PromptDocument, PromptItem, WorkflowDocument } from "../types";
 import { WorkflowGraph } from "../workflows/WorkflowGraph";
 
-const CHINESE_TEXT = /[\u3400-\u9fff]/;
 const SKILL_CATEGORY_ICONS: Record<string, LucideIcon> = {
   implementation: Code,
   delivery: FileCheck2,
@@ -49,8 +47,8 @@ export function SkillsView({ snapshot }: { snapshot: PluginSnapshot }) {
             <span className="skill-name-content">
               <SkillIcon category={skill.category} />
               <span className="skill-name-copy">
-                <strong>{skill.id}</strong>
-                {skill.name === skill.id ? null : <small>{skill.name}</small>}
+                <strong>{skill.name}</strong>
+                {skill.name === skill.id ? null : <small>{skill.id}</small>}
               </span>
             </span>
           </td>
@@ -92,21 +90,6 @@ export function McpView({ snapshot }: { snapshot: PluginSnapshot }) {
 function SkillIcon({ category }: { category?: string }) {
   const Icon = category === undefined ? Sparkles : SKILL_CATEGORY_ICONS[category] ?? Sparkles;
   return <span aria-hidden="true" className="skill-name-icon"><Icon size={20} strokeWidth={1.75} /></span>;
-}
-
-export function ExtensionsView({ snapshot }: { snapshot: PluginSnapshot }) {
-  if (snapshot.extensionTools.length === 0) return <Empty copy="该插件未配置扩展工具" />;
-  return (
-    <ContentTable className="extensions-table" headings={["名称", "用途", "了解更多"]}>
-      {snapshot.extensionTools.map((tool) => (
-        <tr key={tool.id}>
-          <td><strong>{tool.name}</strong>{CHINESE_TEXT.test(tool.name) && tool.name !== tool.id ? <small>{tool.id}</small> : null}</td>
-          <td>{tool.purpose}</td>
-          <td><a href={tool.url} rel="noreferrer" target="_blank">打开资料</a></td>
-        </tr>
-      ))}
-    </ContentTable>
-  );
 }
 
 export function RulesView({ snapshot }: { snapshot: PluginSnapshot }) {
@@ -197,6 +180,12 @@ export function PromptsView({
 
   return (
     <section className="prompts-view">
+      {!readOnly && <div className="portal-page-toolbar" aria-label="页面操作">
+        <button disabled={locked} aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={(event) => { triggerRef.current = event.currentTarget; setBaseline(structuredClone(document)); setInitialFields({ scenario: "", content: "" }); setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} type="button">
+          <Plus aria-hidden="true" size={17} />
+          <span className="portal-action-label">新增 Prompt</span>
+        </button>
+      </div>}
       {document.items.length === 0 ? <p className="empty-copy">尚未添加 Prompt</p> : (
         <ContentTable className="prompts-table" headings={["常用场景", "Prompt", "添加时间", ...(readOnly ? [] : ["操作"])]}>
           {document.items.map((item) => <tr key={item.id}>
@@ -214,12 +203,6 @@ export function PromptsView({
           </tr>)}
         </ContentTable>
       )}
-      {!readOnly && <PortalPageAction>
-        <button disabled={locked} aria-label="新增 Prompt" className="portal-page-action" ref={triggerRef} onClick={(event) => { triggerRef.current = event.currentTarget; setBaseline(structuredClone(document)); setInitialFields({ scenario: "", content: "" }); setEditingId(undefined); setScenario(""); setContent(""); setShowForm(true); }} title="新增 Prompt" type="button">
-          <Plus aria-hidden="true" size={17} />
-          <span className="portal-action-label">新增 Prompt</span>
-        </button>
-      </PortalPageAction>}
       {!readOnly && showForm ? (
         <PortalModal returnFocusRef={triggerRef} busy={recovery.busy} dirty={scenario !== initialFields.scenario || content !== initialFields.content || recovery.pending} onClose={closeForm} title={editingId ? "编辑 Prompt" : "新增 Prompt"}>
           <form className="edit-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>

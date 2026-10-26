@@ -1,7 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkflowEditor } from "./WorkflowEditor";
+import { requestPortalNavigation } from "../PortalModal";
+import { PortalRequestError } from "../requestState";
+
+afterEach(() => vi.restoreAllMocks());
 
 const emptyWorkflow = {
   revision: 0,
@@ -44,7 +48,117 @@ const configuredWorkflow = {
 };
 
 describe("WorkflowEditor", () => {
-  it("creates Tab, section and steps with an explicit next edge", async () => {
+  it("shows one saving status while a page save is pending", async () => {
+    let finish!: () => void;
+    const onSave = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<WorkflowEditor document={configuredWorkflow} onSave={onSave} onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("步骤说明"), { target: { value: "Updated description" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存流程" }));
+    expect(screen.getAllByText("正在保存…")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "保存流程" })).toBeDisabled();
+    await act(async () => finish());
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+  it("retains both step drafts when switching selection in page edit mode", () => {
+    render(<WorkflowEditor document={configuredWorkflow} onSave={vi.fn()} onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("步骤说明"), { target: { value: "第一步草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "解压至独立目录" }));
+    fireEvent.change(screen.getByLabelText("步骤说明"), { target: { value: "第二步草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "取得正式插件包" }));
+    expect(screen.getByLabelText("步骤说明")).toHaveValue("第一步草稿");
+    expect(screen.getByRole("region", { name: "流程画布" })).toHaveTextContent("第二步草稿");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("confirms dirty exit, keeps drafts on cancel and guards browser unload", () => {
+    const exit = vi.fn();
+    const view = render(<WorkflowEditor document={configuredWorkflow} onSave={vi.fn()} onExit={exit} />);
+    fireEvent.change(screen.getByLabelText("步骤标题"), { target: { value: "保留草稿" } });
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload); expect(unload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    expect(screen.getByRole("dialog", { name: "退出流程编辑" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+    expect(screen.getByLabelText("步骤标题")).toHaveValue("保留草稿");
+    expect(exit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "放弃并退出" }));
+    expect(exit).toHaveBeenCalledTimes(1);
+    view.unmount();
+    const after = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(after); expect(after.defaultPrevented).toBe(false);
+  });
+
+  it("only continues guarded navigation after explicit discard", () => {
+    const navigate = vi.fn();
+    render(<WorkflowEditor document={configuredWorkflow} onSave={vi.fn()} onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("步骤标题"), { target: { value: "草稿" } });
+    act(() => { expect(requestPortalNavigation(navigate)).toBe(false); });
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+    act(() => { requestPortalNavigation(navigate); });
+    fireEvent.click(screen.getByRole("button", { name: "放弃并退出" }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks edits, exit and navigation for the single in-flight save, exiting only on success", async () => {
+    let resolve!: () => void;
+    const save = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    const exit = vi.fn(); const navigate = vi.fn();
+    render(<WorkflowEditor document={configuredWorkflow} onSave={save} onExit={exit} />);
+    fireEvent.click(screen.getByRole("button", { name: "保存流程" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存流程" }));
+    expect(screen.getByLabelText("步骤标题")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "退出编辑" })).toBeDisabled();
+    act(() => { requestPortalNavigation(navigate); });
+    expect(navigate).not.toHaveBeenCalled(); expect(exit).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => resolve());
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows explicit exit from an unconfirmed result without replaying the save", async () => {
+    const save = vi.fn().mockRejectedValue(new PortalRequestError("断线", "network_error", undefined, true));
+    const exit = vi.fn();
+    render(<WorkflowEditor document={configuredWorkflow} onSave={save} onCheckSaved={async () => false} onExit={exit} />);
+    fireEvent.click(screen.getByRole("button", { name: "保存流程" }));
+    await screen.findByRole("button", { name: "核对保存结果" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "退出编辑" })).not.toBeDisabled());
+    expect(exit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "退出编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "退出并稍后核对" }));
+    expect(exit).toHaveBeenCalledTimes(1); expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns from compact inspector to the selected step without losing its draft", () => {
+    const originalMedia = window.matchMedia("(max-width: 899px)");
+    vi.spyOn(window, "matchMedia").mockReturnValue({ ...originalMedia, matches: true });
+    vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    render(<WorkflowEditor document={configuredWorkflow} onSave={vi.fn()} onExit={vi.fn()} />);
+    const card = screen.getByRole("button", { name: "解压至独立目录" });
+    card.focus(); fireEvent.click(card);
+    expect(screen.getByLabelText("步骤标题")).toHaveFocus();
+    fireEvent.change(screen.getByLabelText("步骤说明"), { target: { value: "手机草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "返回流程" }));
+    expect(card).toHaveFocus();
+    expect(screen.getByRole("region", { name: "流程编辑" })).toHaveAttribute("data-inspector-open", "false");
+    fireEvent.click(card);
+    expect(screen.getByLabelText("步骤说明")).toHaveValue("手机草稿");
+  });
+
+  it("returns focus to the nearest surviving step after deleting the compact inspector trigger", () => {
+    const originalMedia = window.matchMedia("(max-width: 899px)");
+    vi.spyOn(window, "matchMedia").mockReturnValue({ ...originalMedia, matches: true });
+    vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    render(<WorkflowEditor document={configuredWorkflow} onSave={vi.fn()} onExit={vi.fn()} />);
+    const card = screen.getByRole("button", { name: "取得正式插件包" });
+    card.focus(); fireEvent.click(card);
+    fireEvent.click(screen.getByRole("button", { name: "删除步骤" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回流程" }));
+    expect(screen.getByRole("button", { name: "解压至独立目录" })).toHaveFocus();
+  });
+
+  it("creates Tab, section and steps in their visible order", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<WorkflowEditor document={emptyWorkflow} onSave={onSave} />);
 
@@ -57,12 +171,11 @@ describe("WorkflowEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "新增步骤" }));
     fireEvent.change(screen.getByLabelText("步骤标题"), { target: { value: "解压插件包" } });
     fireEvent.click(screen.getByRole("button", { name: "取得插件包" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "取得插件包 后续：解压插件包" }));
     fireEvent.click(screen.getByRole("button", { name: "保存流程" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     const saved = onSave.mock.calls[0][1];
-    expect(saved.tabs[0].sections[0].steps[0].next).toEqual([saved.tabs[0].sections[0].steps[1].id]);
+    expect(saved.tabs[0].sections[0].steps.map((step: { title: string }) => step.title)).toEqual(["取得插件包", "解压插件包"]);
   });
 
   it("shows a save error without discarding the draft", async () => {

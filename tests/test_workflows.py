@@ -43,17 +43,26 @@ class WorkflowValidationTests(unittest.TestCase):
         )
         self.assertEqual(validate_workflow(document, expected_plugin_key=PLUGIN_KEY), document)
 
-    def test_rejects_duplicate_unknown_cycle_and_unreachable_steps(self) -> None:
+    def test_rejects_duplicate_ids_and_malformed_legacy_links(self) -> None:
         invalid_steps = (
             [step("same", []), step("same", [])],
-            [step("first", ["missing"])],
-            [step("first", ["second"]), step("second", ["first"])],
-            [step("first", []), step("orphan", [])],
+            [step("first", [1])],
+            [step("first", ["second", "second"]), step("second", [])],
         )
         for steps in invalid_steps:
             with self.subTest(steps=steps):
                 with self.assertRaises(WorkflowValidationError):
                     validate_workflow(workflow(steps), expected_plugin_key=PLUGIN_KEY)
+
+    def test_visible_order_accepts_unlinked_steps_and_obsolete_legacy_graphs(self) -> None:
+        for steps in (
+            [step("first", []), step("second", []), step("third", [])],
+            [step("first", ["removed"]), step("second", [])],
+            [step("first", ["second"]), step("second", ["first"])],
+        ):
+            with self.subTest(steps=steps):
+                document = workflow(steps)
+                self.assertEqual(validate_workflow(document, expected_plugin_key=PLUGIN_KEY), document)
 
     def test_rejects_custom_presentation_or_wrong_plugin(self) -> None:
         invalid = workflow([step("only", [])], css=".card { display: none }")
@@ -77,6 +86,13 @@ class WorkflowRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.repository.get(PLUGIN_KEY)["tabs"][0]["sections"][0]["steps"][0]["id"], "pdh")
         self.assertEqual(self.repository.get(yusheng_key)["tabs"], [])
+
+    def test_new_unlinked_steps_save_and_reorder_with_roundtrip(self) -> None:
+        document = workflow([step("first", []), step("second", []), step("third", [])])
+        saved = self.repository.save(PLUGIN_KEY, document, expected_revision=0)
+        document["tabs"][0]["sections"][0]["steps"].reverse()
+        self.repository.save(PLUGIN_KEY, document, expected_revision=saved["revision"])
+        self.assertEqual(self.repository.get(PLUGIN_KEY)["tabs"], document["tabs"])
 
 
 if __name__ == "__main__":

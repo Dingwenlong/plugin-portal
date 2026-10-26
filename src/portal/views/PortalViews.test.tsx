@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ExtensionsView,
   McpView,
   OverviewView,
   PromptsView,
@@ -36,17 +35,16 @@ const snapshot = {
 };
 
 describe("snapshot views", () => {
-  it("renders Skills, MCP and extension purposes without implementation statistics", () => {
+  it("renders Skills and MCP purposes without implementation statistics", () => {
     const { container, rerender } = render(<SkillsView snapshot={snapshot} />);
     expect(screen.getByText("sample-skill")).toBeInTheDocument();
-    expect(container.querySelector("td small")).toHaveTextContent("示例技能");
+    expect(container.querySelector("td strong")).toHaveTextContent("示例技能");
+    expect(container.querySelector("td small")).toHaveTextContent("sample-skill");
     expect(screen.queryByText(/工具数量|transport|timeout/i)).not.toBeInTheDocument();
 
     rerender(<McpView snapshot={snapshot} />);
     expect(screen.getByText("sample-mcp")).toBeInTheDocument();
 
-    rerender(<ExtensionsView snapshot={snapshot} />);
-    expect(screen.getByText("查看测试结果。")).toBeInTheDocument();
   });
 
   it("renders optional MCP public metadata and preserves the ID-only fallback", () => {
@@ -106,7 +104,7 @@ describe("snapshot views", () => {
     };
 
     const { container } = render(<SkillsView snapshot={unordered} />);
-    const renderedIDs = Array.from(container.querySelectorAll("tbody tr strong"), (node) => node.textContent);
+    const renderedIDs = Array.from(container.querySelectorAll("tbody tr small"), (node) => node.textContent);
 
     expect(renderedIDs).toEqual([
       "api-test-db-fixture-preparer",
@@ -142,37 +140,12 @@ describe("snapshot views", () => {
 
     const { container } = render(<SkillsView snapshot={categorized} />);
     const rows = new Map(
-      Array.from(container.querySelectorAll("tbody tr"), (row) => [row.querySelector("strong")?.textContent, row]),
+      Array.from(container.querySelectorAll("tbody tr"), (row) => [row.querySelector("small")?.textContent, row]),
     );
 
     expect(rows.get("code-development")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-code");
     expect(rows.get("delivery-hub-navigator")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-compass");
     expect(rows.get("legacy-skill")?.querySelector(".skill-name-icon svg")).toHaveClass("lucide-sparkles");
-  });
-
-  it("shows an extension tool ID only when the public name is Chinese", () => {
-    const tools = {
-      ...snapshot,
-      extensionTools: [
-        { id: "sonarqube", name: "SonarQube", purpose: "检查代码质量。", url: "https://example.com/sonarqube" },
-        { id: "allure-report", name: "测试报告", purpose: "查看测试结果。", url: "https://example.com/allure" },
-      ],
-    };
-
-    const { container } = render(<ExtensionsView snapshot={tools} />);
-
-    expect(screen.getByText("SonarQube")).toBeInTheDocument();
-    expect(screen.queryByText("sonarqube")).not.toBeInTheDocument();
-    expect(screen.getByText("测试报告")).toBeInTheDocument();
-    expect(container.querySelectorAll("td small")).toHaveLength(1);
-    expect(container.querySelector("td small")).toHaveTextContent("allure-report");
-  });
-
-  it("keeps extension names wider and the resource column on one line", () => {
-    render(<ExtensionsView snapshot={snapshot} />);
-
-    const nameHeading = screen.getByRole("columnheader", { name: "名称" });
-    expect(nameHeading.closest("table")).toHaveClass("extensions-table");
   });
 
   it("renders approved Markdown as safe elements rather than HTML", () => {

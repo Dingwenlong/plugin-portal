@@ -12,7 +12,7 @@ describe("App", () => {
   it("renders the seven fixed pages", () => {
     render(<App plugins={plugins} initialHash="#/plugins/project-delivery-hub/overview" />);
 
-    for (const name of ["鸟瞰全景", "Skills", "Prompts", "MCP", "扩展工具", "工程规范", "版本沿革"]) {
+    for (const name of ["鸟瞰全景", "Skills", "Prompts", "MCP", "工程规范", "版本沿革"]) {
       expect(screen.getByRole("link", { name })).toBeInTheDocument();
     }
   });

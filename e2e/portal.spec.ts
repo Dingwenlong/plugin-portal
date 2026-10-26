@@ -58,7 +58,7 @@ test.describe.serial("Plugin Portal", () => {
       }).observe(root, { attributes: true, attributeFilter: ["data-hub-entry-phase"] });
     });
     await startButton.click();
-    await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/club`);
     await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible({ timeout: 3_000 });
     await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
     await expect(page.getByRole("button", { name: /^管理 / })).toHaveCount(0);
@@ -80,7 +80,7 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByRole("dialog", { name: "纳入插件" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "研发助手插件" })).toHaveAttribute(
       "href",
-      "#/plugins/project-delivery-hub/overview",
+      "#/plugins/company-dev%2Fproject-delivery-hub/overview",
     );
     await expect(page.getByRole("link", { name: "研发助手插件" }).locator("img")).toHaveAttribute(
       "src",
@@ -176,12 +176,12 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByText("研发 Prompt")).toBeVisible();
     const promptAction = page.getByRole("button", { name: "新增 Prompt" });
     const promptActionBox = await promptAction.boundingBox();
-    const promptActionsBox = await page.locator(".portal-capsule-actions").boundingBox();
+    const promptActionsBox = await page.locator("main .portal-page-toolbar").boundingBox();
     expect(promptActionBox).not.toBeNull();
     expect(promptActionsBox).not.toBeNull();
     expect(promptActionBox!.x).toBeGreaterThanOrEqual(promptActionsBox!.x);
     expect(promptActionBox!.x + promptActionBox!.width).toBeLessThanOrEqual(promptActionsBox!.x + promptActionsBox!.width);
-    expect(promptActionBox!.y).toBeLessThan(100);
+    expect(promptActionBox!.y).toBeGreaterThanOrEqual(100);
     await promptAction.click();
     await expect(page.getByRole("dialog", { name: "新增 Prompt" })).toBeVisible();
     await page.getByLabel("常用场景").fill("检查交付");
@@ -192,11 +192,11 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByText("研发 Prompt")).toBeVisible();
     await expect(page.getByRole("link", { name: "Prompts" })).toHaveAttribute(
       "href",
-      "#/plugins/project-delivery-hub/prompts",
+      "#/plugins/company-dev%2Fproject-delivery-hub/prompts",
     );
 
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
-    await expect(page.locator("nav[aria-label='插件内容'] svg")).toHaveCount(6);
+    await expect(page.locator("nav[aria-label='插件内容'] svg")).toHaveCount(5);
     await expect(page.getByRole("link", { name: "研发助手插件" }).locator("img, svg")).toHaveCount(1);
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
     await expect(page.getByRole("main", { name: "鸟瞰全景" })).toBeVisible();
@@ -215,6 +215,10 @@ test.describe.serial("Plugin Portal", () => {
     await expect.poll(() => selectedMenu.evaluate((element) => getComputedStyle(element, "::after").opacity)).toBe("1");
     await selectedMenu.click();
     await expect(page.getByRole("main", { name: "Skills" })).toBeVisible();
+    // Clicking the already keyboard-focused link may retain :focus-visible.
+    // Filled keyboard focus is intentional; the unfocused selected item stays clear.
+    await expect(selectedMenu).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await selectedMenu.evaluate((element) => (element as HTMLElement).blur());
     await expect(selectedMenu).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(selectedMenu).toHaveCSS("border-top-width", "0px");
 
@@ -232,14 +236,14 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByRole("tab", { name: "插件安装" })).toBeVisible();
     await expect(page.getByText("取得插件包")).toBeVisible();
     await expect(page.getByRole("link", { name: "鸟瞰全景" })).toHaveCount(0);
-    const workflowAction = page.getByRole("button", { name: "配置流程" });
+    const workflowAction = page.getByRole("button", { name: "编辑流程" });
     const workflowActionBox = await workflowAction.boundingBox();
-    const workflowActionsBox = await page.locator(".portal-capsule-actions").boundingBox();
+    const workflowActionsBox = await page.locator("main .portal-page-toolbar").boundingBox();
     expect(workflowActionBox).not.toBeNull();
     expect(workflowActionsBox).not.toBeNull();
     expect(workflowActionBox!.x).toBeGreaterThanOrEqual(workflowActionsBox!.x);
     expect(workflowActionBox!.x + workflowActionBox!.width).toBeLessThanOrEqual(workflowActionsBox!.x + workflowActionsBox!.width);
-    expect(workflowActionBox!.y).toBeLessThan(100);
+    expect(workflowActionBox!.y).toBeGreaterThanOrEqual(100);
 
     const workflowTabs = page.getByRole("tablist", { name: "流程" });
     await expect(workflowTabs).toHaveCSS("border-top-style", "none");
@@ -248,7 +252,7 @@ test.describe.serial("Plugin Portal", () => {
     await expect(selectedWorkflowTab).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
     await workflowAction.click();
-    const workflowDialog = page.getByRole("dialog", { name: "配置流程" });
+    const workflowDialog = page.getByRole("region", { name: "流程编辑" });
     const workflowCanvas = workflowDialog.getByRole("region", { name: "流程画布" });
     await expect(workflowDialog).toBeVisible();
     await expect(workflowCanvas.getByRole("tab", { name: "插件安装" })).toHaveAttribute("aria-selected", "true");
@@ -271,8 +275,8 @@ test.describe.serial("Plugin Portal", () => {
     await expect(page.getByText("首次安装并配置", { exact: true })).toBeVisible();
 
     await workflowAction.click();
-    await page.getByRole("dialog", { name: "配置流程" }).press("Escape");
-    await expect(page.getByRole("dialog", { name: "配置流程" })).toHaveCount(0);
+    await page.getByRole("button", { name: "退出编辑" }).click();
+    await expect(page.getByRole("region", { name: "流程编辑" })).toHaveCount(0);
     await expect(workflowAction).toBeFocused();
     await page.goto(`${portal.baseUrl}/#/plugins/yusheng-inc/overview`);
     await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
@@ -283,42 +287,37 @@ test.describe.serial("Plugin Portal", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("keeps the workflow inspector fixed while the canvas scrolls", async ({ page }) => {
+  test("keeps the inline inspector and save controls visible while the page canvas scrolls", async ({ page }) => {
     await page.setViewportSize({ width: 1120, height: 600 });
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
-    await page.getByRole("button", { name: "配置流程" }).click();
+    await page.getByRole("button", { name: "编辑流程" }).click();
 
-    const dialog = page.getByRole("dialog", { name: "配置流程" });
+    const dialog = page.getByRole("region", { name: "流程编辑" });
     const canvas = dialog.getByRole("region", { name: "流程画布" });
     const inspector = dialog.getByRole("complementary", { name: "属性栏" });
     for (let index = 0; index < 10; index += 1) {
       await canvas.getByRole("button", { name: "新增步骤" }).click();
     }
 
+    await page.evaluate(() => window.scrollTo(0, 200));
     const inspectorBefore = await inspector.boundingBox();
-    const canvasScroll = await canvas.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-      return {
-        clientHeight: element.clientHeight,
-        scrollHeight: element.scrollHeight,
-        scrollTop: element.scrollTop,
-      };
-    });
+    await page.evaluate(() => window.scrollTo(0, 400));
     const inspectorAfter = await inspector.boundingBox();
 
-    expect(canvasScroll.scrollHeight).toBeGreaterThan(canvasScroll.clientHeight);
-    expect(canvasScroll.scrollTop).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(400);
+    await expect(canvas).toHaveCSS("overflow", "visible");
     expect(inspectorBefore).not.toBeNull();
     expect(inspectorAfter).not.toBeNull();
     expect(inspectorAfter!.x).toBe(inspectorBefore!.x);
     expect(inspectorAfter!.y).toBe(inspectorBefore!.y);
     expect(inspectorAfter!.height).toBe(inspectorBefore!.height);
-    await expect(dialog.getByRole("heading", { name: "编辑具体步骤" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "保存流程" })).toBeInViewport();
 
-    await dialog.getByRole("button", { name: "关闭" }).click();
+    await dialog.getByRole("button", { name: "退出编辑" }).click();
+    await page.getByRole("button", { name: "放弃并退出" }).click();
   });
 
-  test("keeps Prompt and extension table columns readable", async ({ page }) => {
+  test("keeps Prompt columns readable and redirects the retired extension page", async ({ page }) => {
     const catalog = await portal.listPlugins();
     if (!catalog.items.some((item) => item.id === "project-delivery-hub")) {
       const candidate = await portal.preview("project-delivery-hub", "3.7.19", "研发助手插件");
@@ -340,11 +339,13 @@ test.describe.serial("Plugin Portal", () => {
 
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/prompts`);
+    await expect(page.getByRole("button", { name: "新增 Prompt" })).toBeVisible();
     if (await page.getByRole("columnheader", { name: "常用场景" }).count() === 0) {
       await page.getByRole("button", { name: "新增 Prompt" }).click();
       await page.getByLabel("常用场景").fill("检查交付");
       await page.getByLabel("Prompt 内容").fill("核对公开资料和流程。");
       await page.getByRole("button", { name: "保存" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
     }
 
     for (const width of [1600, 1120, 768]) {
@@ -355,11 +356,8 @@ test.describe.serial("Plugin Portal", () => {
       expect((await scenarioHeading.boundingBox())!.width).toBeGreaterThanOrEqual(200);
 
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/extensions`);
-      const nameHeading = page.getByRole("columnheader", { name: "名称" });
-      const resourceHeading = page.getByRole("columnheader", { name: "了解更多" });
-      await expect(nameHeading).toHaveCSS("min-width", "180px");
-      await expect(resourceHeading).toHaveCSS("width", "96px");
-      await expect(resourceHeading).toHaveCSS("white-space", "nowrap");
+      await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/company-dev%2Fproject-delivery-hub/mcp`);
+      await expect(page.getByRole("button", { name: "上传 JSON" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
     }
   });
@@ -368,7 +366,7 @@ test.describe.serial("Plugin Portal", () => {
     for (const width of [390, 768, 1120, 1600]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
-      await expect(page.getByRole("link", { name: "研发助手插件" })).toHaveAttribute("href", "#/plugins/project-delivery-hub/overview");
+      await expect(page.getByRole("link", { name: "研发助手插件" })).toHaveAttribute("href", "#/plugins/company-dev%2Fproject-delivery-hub/overview");
       const moreButton = page.getByRole("button", { name: "打开导航菜单" });
       if (width < 1024) {
         await expect(moreButton).toBeVisible();
@@ -376,28 +374,34 @@ test.describe.serial("Plugin Portal", () => {
       } else {
         await expect(moreButton).toBeHidden();
       }
-      for (const name of ["Skills", "Prompts", "MCP", "扩展工具", "工程规范", "版本沿革"]) {
+      for (const name of ["Skills", "Prompts", "MCP", "工程规范", "版本沿革"]) {
         await expect(page.getByRole("link", { name })).toBeVisible();
       }
       if (width < 1024) {
         await page.getByRole("link", { name: "Skills" }).click();
-        await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/skills`);
+        await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/company-dev%2Fproject-delivery-hub/skills`);
         await expect(page.getByRole("button", { name: "打开导航菜单" })).toBeVisible();
         await expect(page.getByRole("link", { name: "Skills" })).toBeHidden();
         await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
       }
       await expect(page.getByRole("link", { name: "鸟瞰全景" })).toHaveCount(0);
-      await page.getByRole("button", { name: "配置流程" }).click();
-      const dialog = page.getByRole("dialog", { name: "配置流程" });
+      await page.getByRole("button", { name: "编辑流程" }).click();
+      const dialog = page.getByRole("region", { name: "流程编辑" });
       const canvas = dialog.getByRole("region", { name: "流程画布" });
       const inspector = dialog.getByRole("complementary", { name: "属性栏" });
       await expect(dialog).toBeVisible();
-      const [canvasBox, inspectorBox] = await Promise.all([canvas.boundingBox(), inspector.boundingBox()]);
+      const canvasBox = await canvas.boundingBox();
       expect(canvasBox).not.toBeNull();
-      expect(inspectorBox).not.toBeNull();
       if (width < 900) {
-        expect(inspectorBox!.y).toBeGreaterThanOrEqual(canvasBox!.y + canvasBox!.height - 1);
+        await expect(inspector).toBeHidden();
+        await canvas.locator(".workflow-editor-step").first().click();
+        await expect(inspector).toBeVisible();
+        await expect(canvas).toBeHidden();
+        await dialog.getByRole("button", { name: "返回流程" }).click();
+        await expect(canvas).toBeVisible();
       } else {
+        const inspectorBox = await inspector.boundingBox();
+        expect(inspectorBox).not.toBeNull();
         expect(inspectorBox!.x).toBeGreaterThanOrEqual(canvasBox!.x + canvasBox!.width - 1);
         expect(inspectorBox!.width).toBeGreaterThanOrEqual(350);
         expect(inspectorBox!.width).toBeLessThanOrEqual(370);
@@ -406,7 +410,7 @@ test.describe.serial("Plugin Portal", () => {
       expect(dialogOverflows).toBe(false);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
       expect(overflow).toBe(false);
-      await dialog.getByRole("button", { name: "关闭" }).click();
+      await dialog.getByRole("button", { name: "退出编辑" }).click();
     }
   });
 
@@ -503,11 +507,11 @@ test.describe("Capsule refinements", () => {
   });
 
   test("keeps every menu label width and weight unchanged when selection changes", async ({ page }) => {
-    const names = ["Skills", "Prompts", "MCP", "扩展工具", "工程规范", "版本沿革"];
+    const names = ["Skills", "Prompts", "MCP", "工程规范", "版本沿革"];
     for (const width of [1600, 768]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
-      await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "编辑流程", exact: true })).toBeVisible();
       if (width < 1024) await page.getByRole("button", { name: "打开导航菜单" }).click();
       const originalBoxes = await Promise.all(names.map((name) => page.getByRole("link", { name, exact: true }).boundingBox()));
       for (const selectedName of names) {
@@ -552,10 +556,10 @@ test.describe("Capsule refinements", () => {
     }
   });
 
-  test("keeps download after page actions and before desktop appearance settings", async ({ page }) => {
+  test("keeps download in the header and page actions in their content toolbars", async ({ page }) => {
     for (const width of [1600, 1120, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const [route, label] of [["overview", "配置流程"], ["prompts", "新增 Prompt"]]) {
+      for (const [route, label] of [["overview", "编辑流程"], ["prompts", "新增 Prompt"]]) {
         await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route}`);
         const download = page.getByRole("link", { name: "下载最新版 v3.7.19" });
         const action = page.getByRole("button", { name: label });
@@ -570,11 +574,9 @@ test.describe("Capsule refinements", () => {
           const appearance = (await page.getByRole("button", { name: "外观设置" }).boundingBox())!;
           expect(appearance.x).toBeGreaterThanOrEqual(downloadBox.x + downloadBox.width);
         }
-        for (const property of ["font-size", "font-weight", "line-height", "padding-top", "padding-right", "border-radius", "border-top-color", "background-color"]) {
-          const expected = await download.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
-          await expect(action).toHaveCSS(property, expected);
-        }
-        expect(Math.abs((await action.boundingBox())!.height - downloadBox.height)).toBeLessThanOrEqual(1);
+        expect(await action.evaluate(element => Boolean(element.closest("main .portal-page-toolbar")))).toBe(true);
+        await expect(page.locator("header .portal-page-action")).toHaveCount(0);
+        expect((await action.boundingBox())!.height).toBeGreaterThanOrEqual(40);
         expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
       }
     }
@@ -629,12 +631,12 @@ test.describe("Capsule refinements", () => {
     }
   });
 
-  for (const [route, label] of [["overview", "研发助手插件"], ["skills", "Skills"], ["prompts", "Prompts"], ["mcp", "MCP"], ["extensions", "扩展工具"], ["rules", "工程规范"], ["releases", "版本沿革"]]) {
+  for (const [route, label] of [["overview", "研发助手插件"], ["skills", "Skills"], ["prompts", "Prompts"], ["mcp", "MCP"], ["rules", "工程规范"], ["releases", "版本沿革"]]) {
     test(`hides after mouse navigation on ${route} and preserves keyboard focus`, async ({ page }) => {
       await page.setViewportSize({ width: 1600, height: 640 });
       await page.goto(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route === "skills" ? "overview" : "skills"}`);
       await page.getByRole("link", { name: label, exact: true }).click();
-      await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/${route}`);
+      await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/company-dev%2Fproject-delivery-hub/${route}`);
       await page.locator(".portal-content").evaluate((element) => { element.style.minHeight = "2200px"; });
       const capsule = page.getByRole("banner", { name: "插件导航" });
       await page.mouse.move(800, 450);
@@ -673,7 +675,7 @@ test("reopens a re-included plugin without a manual page refresh", async ({ page
     await expect(page.getByRole("dialog", { name: "纳入插件" })).toHaveCount(0);
 
     await page.getByRole("link", { name: "研发助手插件" }).click();
-    await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/project-delivery-hub/overview`);
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/plugins/company-dev%2Fproject-delivery-hub/overview`);
     await expect(page.getByText("正在读取公开资料…")).toHaveCount(0);
     await expect(page.getByText("尚未配置鸟瞰全景流程")).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { portalNavigationMarker?: string }).portalNavigationMarker)).toBe("same-document");

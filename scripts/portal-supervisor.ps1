@@ -38,9 +38,19 @@ function Get-PortalTreeDigest([string]$Root) {
     finally { $sha.Dispose() }
 }
 
+function Assert-PortalCoreConfigurationSchema($Settings) {
+    $required = 'schemaVersion,runtime,python,caddy,caddyConfig,certificate,dataRoot,logRoot,lanAddress,maxRestarts,restartDelaySeconds'.Split(',')
+    # Accept the legacy field so upgrading Portal does not require touching audit
+    # configuration. It is never opened or forwarded to the backend.
+    $actual = @($Settings.PSObject.Properties.Name | Where-Object { $_ -ne 'auditConfigPath' })
+    if (@(Compare-Object $actual $required).Count -ne 0 -or $Settings.schemaVersion -ne '1.0.0') {
+        throw 'Unsupported Portal configuration.'
+    }
+}
+
 function Assert-PortalRuntimeLayout([string]$Root) {
     foreach ($relative in @('dist/index.html', 'plugin_portal/__init__.py', 'plugin_portal/__main__.py',
-                            'plugin_portal/server.py', 'plugin_portal/api.py', 'plugin_portal/audit_config.py',
+                            'plugin_portal/server.py', 'plugin_portal/api.py', 'plugin_portal/archive_audit.py',
                             'plugin_portal/launcher_config.py', 'plugin_portal/download_publication.py', 'plugin_portal/uploads.py')) {
         $path = Join-Path $Root $relative
         Assert-PortalPlainPath $path

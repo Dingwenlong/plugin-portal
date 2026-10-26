@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { PluginManager } from "./PluginManager";
@@ -160,5 +160,57 @@ describe("PluginManager", () => {
     />);
     expect(screen.queryByLabelText("插件目录")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("插件 ZIP")).not.toBeInTheDocument();
+  });
+
+  it("shows the package marketplace and explains an older-version switch before confirming", async () => {
+    const detected = { ...candidate, pluginKey: "company-internal/project-delivery-hub",
+      snapshot: { ...candidate.snapshot, plugin: { ...candidate.snapshot.plugin, target: "company-internal", version: "4.3.1" } },
+      importOptions: { marketplace: "company-internal", currentVersion: "4.3.6", catalogRevision: 20, rules: [], rulesTruncated: false } };
+    const promote = vi.fn().mockResolvedValue({ revision: 21, pluginKey: detected.pluginKey, snapshotId: "a".repeat(64) });
+    const client = { selectPluginDirectory: vi.fn(), uploadPluginArchive: vi.fn().mockResolvedValue({ uploadId: "upload", fileName: "old.zip", archiveBytes: 3 }),
+      previewImport: vi.fn().mockResolvedValue(detected), promote, rollback: vi.fn() };
+    render(<PluginManager catalogRevision={19} client={client} fileSelectionMode="browser-upload" onChanged={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("插件 ZIP"), { target: { files: [new File(["zip"], "old.zip")] } });
+    await screen.findByText("该来源当前为 v4.3.6，确认后切换为 v4.3.1。");
+    expect(screen.getByLabelText("来源市场")).toHaveValue("company-internal");
+    expect(screen.getByLabelText("来源市场")).toHaveAttribute("readonly");
+    expect(screen.queryByLabelText("公开规范相对路径")).not.toBeInTheDocument();
+    expect(promote).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认纳入" }));
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(detected.pluginKey, detected.candidateId, 20));
+  });
+
+  it("searches and previews rule files, then requires the updated preview before promotion", async () => {
+    const document = { path: "rules/public.md", bodyMarkdown: "# 公开规范\n规范正文" };
+    const detected = { ...candidate, importOptions: { marketplace: null, currentVersion: null, catalogRevision: 0, rulesTruncated: false,
+      rules: [{ path: document.path, title: "公开规范", available: true, reason: null },
+        { path: "private.md", title: "私有资料", available: false, reason: "工程规范正文包含私密赋值" }] } };
+    const updated = { ...detected, candidateId: "selected-candidate", snapshot: { ...candidate.snapshot, engineeringRules: [document] } };
+    const readImportRule = vi.fn().mockResolvedValue(document);
+    const previewImportRules = vi.fn().mockResolvedValue(updated);
+    const promote = vi.fn().mockResolvedValue({ revision: 1, pluginKey: candidate.pluginKey, snapshotId: "a".repeat(64) });
+    const client = { selectPluginDirectory: vi.fn().mockResolvedValue({ selected: true, path: "fixtures/plugin" }),
+      previewImport: vi.fn().mockResolvedValue(detected), readImportRule, previewImportRules, promote, rollback: vi.fn() };
+    render(<PluginManager catalogRevision={0} client={client} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "选择插件目录" }));
+    await screen.findByText("将纳入 研发助手插件 v3.7.18");
+    fireEvent.click(screen.getByText("高级公开内容（可选）"));
+    expect(screen.getByLabelText("公开 private.md")).toBeDisabled();
+    expect(readImportRule).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("搜索规范文件"), { target: { value: "public" } });
+    expect(screen.queryByText("私有资料")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "预览 rules/public.md" }));
+    expect(await within(screen.getByRole("region", { name: "规范正文预览" })).findByText(/规范正文/)).toBeVisible();
+    expect(readImportRule).toHaveBeenCalledWith(candidate.candidateId, document.path);
+    fireEvent.click(screen.getByRole("button", { name: "关闭正文预览" }));
+    expect(screen.getByRole("button", { name: "预览 rules/public.md" })).toHaveFocus();
+    fireEvent.click(screen.getByLabelText("公开 rules/public.md"));
+    expect(screen.getByRole("button", { name: "确认纳入" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "更新规范预览" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "确认纳入" })).toBeEnabled());
+    expect(previewImportRules).toHaveBeenCalledWith(candidate.candidateId, [document.path]);
+    expect(promote).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认纳入" }));
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(candidate.pluginKey, "selected-candidate", 0));
   });
 });

@@ -131,6 +131,7 @@ class AuditConfigTests(unittest.TestCase):
 
     def test_inspector_audit_accepts_only_matching_tool_output(self):
         self.configure_inspector()
+        (self.root / "candidate.zip").write_bytes(b"legacy candidate fixture")
         delegate = ConfiguredPluginReleaseAuditor(self.config)._configured_delegate()
         report = {"schemaVersion": "1.0.0", "tool": "plugin-inspector", "toolVersion": "1.0.0",
                   "operation": "diagnose", "status": "audited", "pluginId": "demo", "target": "company-dev",

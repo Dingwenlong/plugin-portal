@@ -24,12 +24,13 @@ interface PreviewCandidate {
 export interface TestPortal {
   baseUrl: string;
   listPlugins(): Promise<{ revision: number; items: PluginListItem[] }>;
-  preview(id: string, version: string, displayName: string): Promise<PreviewCandidate>;
+  preview(id: string, version: string, displayName: string, target?: string): Promise<PreviewCandidate>;
   promote(candidate: PreviewCandidate, revision: number): Promise<void>;
   rollback(pluginKey: string, revision: number): Promise<void>;
   snapshot(pluginKey: string): Promise<{ plugin: { version: string } }>;
   preparePlugin(id: string, version: string, displayName: string): string;
   preparePickerPlugin(version: string): void;
+  prepareMarketplaceArchive(target: string, version: string): string;
   pluginArchivePath: string;
   downloadArchivePath: string;
   seedPublishedDownload(fileName: string): void;
@@ -43,7 +44,8 @@ export interface TestPortal {
   stop(): Promise<void>;
 }
 
-export async function startTestPortal(): Promise<TestPortal> {
+export async function startTestPortal(options: { realAudit?: boolean } = {}): Promise<TestPortal> {
+  const auditArgs = options.realAudit ? ["--real-audit"] : [];
   const repositoryRoot = resolve(import.meta.dirname, "..");
   const temporaryRoot = mkdtempSync(join(tmpdir(), "plugin-portal-e2e-"));
   const dataRoot = join(temporaryRoot, "data");
@@ -97,6 +99,7 @@ export async function startTestPortal(): Promise<TestPortal> {
       downloadRoot,
       "--candidate-version",
       "3.7.19",
+      ...auditArgs,
     ],
     { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -143,12 +146,12 @@ export async function startTestPortal(): Promise<TestPortal> {
   return {
     baseUrl,
     listPlugins: () => api("/api/plugins"),
-    preview: (id, version, displayName) => api("/api/plugins/import/preview", {
+    preview: (id, version, displayName, target = "company-dev") => api("/api/plugins/import/preview", {
       method: "POST",
       session: true,
       body: {
         source: { kind: "server-directory", path: rootFor(id, version, displayName) },
-        target: "company-dev",
+        target,
         expectedPluginId: id,
         approvedRulePaths: ["rules/public.md"],
         extensionTools: [],
@@ -167,6 +170,23 @@ export async function startTestPortal(): Promise<TestPortal> {
     snapshot: (pluginKey) => api(`/api/plugins/${encodeURIComponent(pluginKey)}/snapshot`),
     preparePlugin: rootFor,
     preparePickerPlugin,
+    prepareMarketplaceArchive: (target, version) => {
+      const bundleRoot = mkdtempSync(join(temporaryRoot, "bundle-"));
+      const marketplaceRoot = join(bundleRoot, "marketplace");
+      const root = rootFor("project-delivery-hub", version, "研发助手插件");
+      cpSync(root, join(marketplaceRoot, "p"), { recursive: true });
+      const manifestPath = join(marketplaceRoot, "p", ".codex-plugin", "plugin.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.author = { name: "Portal test fixture" };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      mkdirSync(join(marketplaceRoot, ".agents", "plugins"), { recursive: true });
+      writeFileSync(join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), JSON.stringify({
+        name: target, plugins: [{ name: "project-delivery-hub", source: { source: "local", path: "./p" } }],
+      }));
+      const archive = join(temporaryRoot, `project-delivery-hub-${version}-${target}-offline.zip`);
+      writePluginArchive(bundleRoot, archive);
+      return archive;
+    },
     pluginArchivePath,
     downloadArchivePath,
     seedPublishedDownload: (fileName) => writeFileSync(join(downloadRoot, fileName), archiveBytes),
@@ -211,6 +231,7 @@ export async function startTestPortal(): Promise<TestPortal> {
         "--archive-path", downloadArchivePath,
         "--download-root", downloadRoot,
         "--candidate-version", "3.7.19",
+        ...auditArgs,
         "--read-only",
       ], { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] });
       readers.push(reader);
@@ -233,6 +254,7 @@ export async function startTestPortal(): Promise<TestPortal> {
         "--archive-path", downloadArchivePath,
         "--download-root", downloadRoot,
         "--candidate-version", "3.7.19",
+        ...auditArgs,
         "--remote-management",
         "--https-origin", origin,
       ], { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] });

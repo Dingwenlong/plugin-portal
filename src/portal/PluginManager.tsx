@@ -1,30 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 import { useModalGuard } from "./PortalModal";
 import { errorMessage, isUncertain, PortalRequestError, sameContent } from "./requestState";
+import { ImportRulePicker } from "./ImportRulePicker";
 
 import type {
-  ExtensionTool,
   FileSelectionMode,
   PluginDirectorySelection,
   PluginImportCandidate,
   PluginImportConfig,
   PluginImportSource,
   PluginMutationReceipt,
+  PluginRemovalReceipt,
   PluginSnapshot,
   PluginUploadReceipt,
   PluginDownloadInfo,
   PluginCatalog,
+  EngineeringRule,
 } from "./types";
 
 export interface PluginManagementClient {
   selectPluginDirectory(): Promise<PluginDirectorySelection>;
   uploadPluginArchive?(file: File): Promise<PluginUploadReceipt>;
   previewImport(config: PluginImportConfig): Promise<PluginImportCandidate>;
+  readImportRule?(candidateId: string, path: string): Promise<EngineeringRule>;
+  previewImportRules?(candidateId: string, paths: string[]): Promise<PluginImportCandidate>;
   promote(pluginKey: string, candidateId: string, revision: number): Promise<PluginMutationReceipt>;
   rollback(pluginKey: string, revision: number): Promise<PluginMutationReceipt>;
   getSnapshot?(pluginKey: string, signal?: AbortSignal): Promise<PluginSnapshot>;
   getDownloadInfo?(pluginKey: string, signal?: AbortSignal): Promise<PluginDownloadInfo>;
   listPlugins?(signal?: AbortSignal): Promise<PluginCatalog>;
+  removePlugin?(pluginKey: string, revision: number): Promise<PluginRemovalReceipt>;
+  reorderPlugins?(pluginIds: string[], revision: number): Promise<{ revision: number; pluginIds: string[] }>;
 }
 
 export function PluginManager({
@@ -44,8 +50,7 @@ export function PluginManager({
   const [source, setSource] = useState<PluginImportSource>();
   const [sourceLabel, setSourceLabel] = useState("");
   const [target, setTarget] = useState(currentSnapshot?.plugin.target ?? "company-dev");
-  const [rulePaths, setRulePaths] = useState("");
-  const [toolsJson, setToolsJson] = useState("[]");
+  const [rulePaths, setRulePaths] = useState<string[]>([]);
   const [candidate, setCandidate] = useState<PluginImportCandidate>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +64,12 @@ export function PluginManager({
   const busyRef = useRef(false);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  useModalGuard(Boolean(source || candidate || fileRef.current || rulePaths || toolsJson !== "[]") && !completed, busy);
+  useModalGuard(Boolean(source || candidate || fileRef.current || rulePaths.length) && !completed, busy);
+  const rulesChanged = Boolean(candidate) && !sameContent(rulePaths, candidate!.snapshot.engineeringRules.map((rule) => rule.path));
+  const acceptPreview = (result: PluginImportCandidate) => {
+    setCandidate(result); setRulePaths(result.snapshot.engineeringRules.map((rule) => rule.path)); setNeedsPreview(false);
+    setConfirmationRevision(result.importOptions?.catalogRevision); setCatalogConflict(false);
+  };
   const begin = (label: string) => {
     if (busyRef.current) return false;
     busyRef.current = true;
@@ -79,19 +89,19 @@ export function PluginManager({
     }
   };
 
-  const configFor = (nextSource: PluginImportSource): PluginImportConfig => ({
+  const configFor = (nextSource: PluginImportSource, paths = rulePaths): PluginImportConfig => ({
     source: nextSource,
     target: target.trim(),
     expectedPluginId: currentSnapshot?.plugin.id ?? "",
-    approvedRulePaths: rulePaths.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-    extensionTools: parseExtensionTools(toolsJson),
+    approvedRulePaths: paths,
+    extensionTools: [],
   });
 
   const preview = async (nextSource = source) => {
     if (!nextSource || !begin("正在生成预览…")) return;
     try {
       const result = await client.previewImport(configFor(nextSource));
-      if (active.current) { setCandidate(result); setNeedsPreview(false); }
+      if (active.current) acceptPreview(result);
     } catch (reason) {
       if (!active.current) return;
       if (reason instanceof PortalRequestError && ["invalid_session", "upload_not_found"].includes(reason.code)) setNeedsPreview(true);
@@ -112,8 +122,8 @@ export function PluginManager({
       setSource(nextSource);
       setSourceLabel(selection.path);
       setPhase("正在生成预览…");
-      const result = await client.previewImport(configFor(nextSource));
-      if (active.current) { setCandidate(result); setNeedsPreview(false); }
+      const result = await client.previewImport(configFor(nextSource, []));
+      if (active.current) acceptPreview(result);
     } catch (reason) {
       if (!active.current) return;
       setCandidate(undefined);
@@ -137,8 +147,8 @@ export function PluginManager({
       setSource(nextSource);
       setSourceLabel(uploaded.fileName);
       setPhase("正在生成预览…");
-      const result = await client.previewImport(configFor(nextSource));
-      if (active.current) { setCandidate(result); setNeedsPreview(false); }
+      const result = await client.previewImport(configFor(nextSource, []));
+      if (active.current) acceptPreview(result);
     } catch (reason) {
       if (!active.current) return;
       setCandidate(undefined);
@@ -169,7 +179,7 @@ export function PluginManager({
   };
 
   const promote = async () => {
-    if (!candidate || pending || completed || needsPreview || catalogConflict || !begin("正在校验并纳入插件…")) return;
+    if (!candidate || pending || completed || needsPreview || catalogConflict || rulesChanged || !begin("正在校验并纳入插件…")) return;
     try {
       await client.promote(candidate.pluginKey, candidate.candidateId, confirmationRevision ?? catalogRevision);
       if (!active.current) return;
@@ -232,9 +242,24 @@ export function PluginManager({
         </label> : null}
         <details className="advanced-import-options">
           <summary>高级公开内容（可选）</summary>
-          <label>发布者<input aria-label="发布者" value={target} onChange={(event) => { setTarget(event.currentTarget.value); setCandidate(undefined); }} /></label>
-          <label>公开规范相对路径<textarea aria-label="公开规范相对路径" placeholder="每行一条，例如 rules/public.md" value={rulePaths} onChange={(event) => { setRulePaths(event.currentTarget.value); setCandidate(undefined); }} /></label>
-          <label>扩展工具 JSON<textarea aria-label="扩展工具 JSON" value={toolsJson} onChange={(event) => { setToolsJson(event.currentTarget.value); setCandidate(undefined); }} /></label>
+          <label>来源市场<input aria-label="来源市场" readOnly={Boolean(candidate?.importOptions?.marketplace)} value={candidate?.importOptions?.marketplace ?? target}
+            onChange={(event) => { setTarget(event.currentTarget.value); setCandidate(undefined); }} /></label>
+          {candidate?.importOptions?.marketplace && <p>已从发行包识别来源市场。</p>}
+          {candidate?.importOptions && <ImportRulePicker key={candidate.pluginKey} candidate={candidate} client={client} paths={rulePaths} onChange={setRulePaths} />}
+          {!candidate && <p>选择插件后，可在这里勾选要公开的规范文件并预览正文。</p>}
+          {rulesChanged && <button type="button" disabled={busy} onClick={async () => {
+            if (!candidate || !begin("正在更新规范预览…")) return;
+            try {
+              if (!client.previewImportRules) throw new Error("规范文件选择暂不可用，请刷新页面");
+              const next = await client.previewImportRules(candidate.candidateId, rulePaths);
+              if (active.current) acceptPreview(next);
+            } catch (reason) {
+              if (active.current) {
+                setError(errorMessage(reason));
+                if (reason instanceof PortalRequestError && ["invalid_session", "candidate_not_found"].includes(reason.code)) setNeedsPreview(true);
+              }
+            } finally { finish(); }
+          }}>更新规范预览</button>}
           <button disabled={busy || !source} onClick={() => preview()} type="button">重新生成预览</button>
         </details>
         <div className="row-actions">
@@ -249,8 +274,14 @@ export function PluginManager({
             ? `版本 ${currentSnapshot.plugin.version} → ${candidate.snapshot.plugin.version}`
             : `将纳入 ${candidate.snapshot.plugin.name} v${candidate.snapshot.plugin.version}`}</p>
           <p>{candidate.snapshot.plugin.id} · v{candidate.snapshot.plugin.version}</p>
-          <p>只读公开内容：Skills、MCP 服务 ID、批准的扩展工具与规范正文。</p>
-          {!completed && !pending && !needsPreview && !catalogConflict && <button disabled={busy} onClick={promote} type="button">{currentSnapshot ? "确认刷新" : "确认纳入"}</button>}
+          <p>来源市场：{candidate.snapshot.plugin.target}</p>
+          {candidate.importOptions?.currentVersion && candidate.importOptions.currentVersion !== candidate.snapshot.plugin.version && <p>
+            该来源当前为 v{candidate.importOptions.currentVersion}，确认后切换为 v{candidate.snapshot.plugin.version}。
+          </p>}
+          <p>只读公开内容：Skills、MCP 服务 ID 与 {candidate.snapshot.engineeringRules.length} 份规范正文。</p>
+          {rulesChanged && <p role="status">规范选择已改变，请先更新规范预览。</p>}
+          {candidate.snapshot.engineeringRules.length > 0 && <ul className="import-selected-rules">{candidate.snapshot.engineeringRules.map((rule) => <li key={rule.path}>{rule.path}</li>)}</ul>}
+          {!completed && !pending && !needsPreview && !catalogConflict && <button disabled={busy || rulesChanged} onClick={promote} type="button">{currentSnapshot ? "确认刷新" : "确认纳入"}</button>}
         </div>
       ) : null}
       {completed && <p role="status">已纳入插件。</p>}
@@ -261,7 +292,8 @@ export function PluginManager({
         try {
           if (!client.listPlugins) throw new Error("无法读取最新目录，请关闭后重试");
           const latest = await client.listPlugins();
-          if (active.current) { setConfirmationRevision(latest.revision); setCatalogConflict(false); }
+          const next = source ? await client.previewImport(configFor(source)) : undefined;
+          if (active.current) { if (next) acceptPreview(next); setConfirmationRevision(next?.importOptions?.catalogRevision ?? latest.revision); setCatalogConflict(false); }
         } catch (reason) { if (active.current) setError(errorMessage(reason)); }
         finally { finish(); }
       }} type="button">读取最新目录</button></>}
@@ -269,15 +301,4 @@ export function PluginManager({
       {error ? <p role="alert">{error}</p> : null}
     </section>
   );
-}
-
-function parseExtensionTools(value: string): ExtensionTool[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error("扩展工具 JSON 无效");
-  }
-  if (!Array.isArray(parsed)) throw new Error("扩展工具 JSON 必须是数组");
-  return parsed as ExtensionTool[];
 }

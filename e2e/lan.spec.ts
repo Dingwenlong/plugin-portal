@@ -22,14 +22,14 @@ test("LAN exposes approved content but no inclusion, workflow or Prompt writes",
   await expect(page.getByRole("button", { name: /发布 .* 下载/ })).toHaveCount(0);
   await page.getByRole("link", { name: "研发助手插件" }).click();
   await expect(page.getByRole("heading", { name: "首次安装" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "配置流程" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "编辑流程" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "下载最新版 v3.7.17" }))
     .toHaveAttribute("href", "/api/plugins/company-dev%2Fproject-delivery-hub/download");
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
   await expect(page.getByText("研发 Prompt", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /新增 Prompt|编辑|删除/ })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "操作" })).toHaveCount(0);
-  for (const name of ["Skills", "MCP", "扩展工具", "工程规范", "版本沿革"]) {
+  for (const name of ["Skills", "MCP", "工程规范", "版本沿革"]) {
     await page.getByRole("link", { name, exact: true }).click();
     await expect(page.getByRole("main", { name, exact: true })).toBeVisible();
   }

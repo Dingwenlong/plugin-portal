@@ -17,12 +17,17 @@ test.afterEach(async () => {
   await portal?.stop();
 });
 
-test("remote HTTPS management uploads, edits and publishes without server paths", async ({ page, request }) => {
+test("remote HTTPS management uploads, edits and publishes without server paths", async ({ page, request }, testInfo) => {
   test.setTimeout(90_000);
   const browserErrors: string[] = [];
+  const inheritedWarnings: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error") browserErrors.push(message.text());
+    if (message.type() !== "error") return;
+    // Full Chrome/Edge request the unchanged site's absent favicon, unlike the
+    // bundled headless shell. Keep it as evidence, not an upload/runtime failure.
+    if (message.location().url === `${baseUrl}/favicon.ico` && message.text().includes("404")) inheritedWarnings.push(message.text());
+    else browserErrors.push(message.text());
   });
 
   const access = await request.get(`${baseUrl}/api/access`);
@@ -71,8 +76,8 @@ test("remote HTTPS management uploads, edits and publishes without server paths"
   await expect(page.getByText("远程管理验收", { exact: true })).toBeVisible();
 
   await page.goto(`${baseUrl}/#/plugins/project-delivery-hub/overview`);
-  await page.getByRole("button", { name: "配置流程", exact: true }).click();
-  const workflowDialog = page.getByRole("dialog", { name: "配置流程" });
+  await page.getByRole("button", { name: "编辑流程", exact: true }).click();
+  const workflowDialog = page.getByRole("region", { name: "流程编辑" });
   await workflowDialog.getByRole("button", { name: "新增 Tab" }).click();
   await workflowDialog.getByLabel("Tab 标题").fill("远程流程");
   await workflowDialog.getByRole("button", { name: "保存流程" }).click();
@@ -116,4 +121,5 @@ test("remote HTTPS management uploads, edits and publishes without server paths"
   }
 
   expect(browserErrors).toEqual([]);
+  await testInfo.attach("inherited-browser-warnings", { body: JSON.stringify(inheritedWarnings), contentType: "application/json" });
 });

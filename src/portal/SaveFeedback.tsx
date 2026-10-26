@@ -1,18 +1,19 @@
 import { useState } from "react";
 import { errorMessage } from "./requestState";
 
-export function SaveFeedback<T>({ recovery, draft, readLatest, applyLatest }: {
+export function SaveFeedback<T>({ recovery, draft, readLatest, applyLatest, showBusy = true }: {
   recovery: { busy: boolean; error: string; pending: boolean; conflict: boolean; check: () => Promise<void> };
   draft: unknown;
   readLatest?: () => Promise<T>;
   applyLatest?: (value: T) => void;
+  showBusy?: boolean;
 }) {
   const [latest, setLatest] = useState<T>();
   const [notice, setNotice] = useState("");
   const [reading, setReading] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   return <>
-    {recovery.busy && <p role="status">{recovery.pending ? "正在核对保存结果…" : "正在保存…"}</p>}
+    {showBusy && recovery.busy && <p role="status">{recovery.pending ? "正在核对保存结果…" : "正在保存…"}</p>}
     {recovery.error && <p role="alert">{recovery.error}</p>}
     {recovery.pending && <button disabled={recovery.busy} onClick={() => void recovery.check()} type="button">核对保存结果</button>}
     {(recovery.conflict || recovery.pending) && <div className="portal-resource-notice">

@@ -31,7 +31,7 @@ async function setTheme(page: Page, theme: "dark" | "light") {
 
 const pages = [
   ["overview", "鸟瞰全景"], ["skills", "Skills"], ["prompts", "Prompts"],
-  ["mcp", "MCP"], ["extensions", "扩展工具"], ["rules", "工程规范"], ["releases", "版本沿革"],
+  ["mcp", "MCP"], ["rules", "工程规范"], ["releases", "版本沿革"],
 ] as const;
 
 async function navigate(page: Page, section: string, name: string) {
@@ -100,7 +100,7 @@ test("themes the Hub, every plugin page and the inclusion dialog without changin
     await expect(themeToggle).toHaveText("");
     await expect(themeToggle).not.toHaveAttribute("title");
     const heading = page.locator(".company-dev-hub-section-heading");
-    const headingText = heading.getByRole("heading", { level: 2, name: "插件" });
+    const headingText = heading.getByRole("heading", { level: 2, name: "Plugin Family" });
     const includeButton = heading.getByRole("button", { name: "纳入插件" });
     await expect(heading).toHaveCSS("gap", "12px");
     await expect(includeButton).toHaveText("");
@@ -161,8 +161,8 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
   await expect(page.getByRole("button", { name: "新增 Prompt", exact: true })).toBeFocused();
 
   await navigate(page, "overview", "鸟瞰全景");
-  await page.getByRole("button", { name: "配置流程", exact: true }).click();
-  const workflow = page.getByRole("dialog", { name: "配置流程" });
+  await page.getByRole("button", { name: "编辑流程", exact: true }).click();
+  const workflow = page.getByRole("region", { name: "流程编辑" });
   const title = workflow.getByRole("textbox", { name: "步骤标题", exact: true });
   await title.fill("保留未保存步骤");
   await title.evaluate((element) => element.setAttribute("data-original-node", "true"));
@@ -177,9 +177,9 @@ test("keeps Prompt and workflow drafts, focus, errors and scroll when another ta
   expect(await inspector.evaluate((element) => getComputedStyle(element).backgroundColor))
     .not.toBe(await canvas.evaluate((element) => getComputedStyle(element).backgroundColor));
   await expect(workflow.getByRole("region", { name: "流程画布" })).toContainText("保留未保存步骤");
-  await page.keyboard.press("Escape");
-  await workflow.getByRole("button", { name: "放弃并关闭" }).click();
-  await expect(page.getByRole("button", { name: "配置流程", exact: true })).toBeFocused();
+  await workflow.getByRole("button", { name: "退出编辑" }).click();
+  await page.getByRole("button", { name: "放弃并退出" }).click();
+  await expect(page.getByRole("button", { name: "编辑流程", exact: true })).toBeFocused();
   await themePage.close();
 });
 
@@ -196,7 +196,9 @@ for (const width of [1600, 1120, 1024, 1023, 768, 390, 320]) {
     await expect(download).toHaveAttribute("aria-label", "下载最新版 v3.7.17");
     await expect(download).toHaveText("v3.7.17");
     const downloadBox = (await download.boundingBox())!;
-    expect((await action.boundingBox())!.x + (await action.boundingBox())!.width).toBeLessThan(downloadBox.x);
+    expect(await action.evaluate(element => Boolean(element.closest("main .portal-page-toolbar")))).toBe(true);
+    expect((await action.boundingBox())!.y).toBeGreaterThan((await capsule.boundingBox())!.y + (await capsule.boundingBox())!.height);
+    await expect(capsule.locator(".portal-page-action")).toHaveCount(0);
     if (width >= 1024) {
       await expect(page.locator(".portal-theme-toggle")).toHaveCount(0);
       const initialNav = (await navigation.boundingBox())!;
@@ -225,7 +227,7 @@ for (const width of [1600, 1120, 1024, 1023, 768, 390, 320]) {
       await setTheme(page, "light");
       const more = page.getByRole("button", { name: "打开导航菜单" });
       await more.click();
-      await expect(navigation.getByRole("link")).toHaveCount(6);
+      await expect(navigation.getByRole("link")).toHaveCount(5);
       const menuBox = (await navigation.boundingBox())!;
       const capsuleBox = (await capsule.boundingBox())!;
       expect(menuBox.y).toBeGreaterThan(capsuleBox.y + capsuleBox.height);
@@ -260,7 +262,7 @@ test("supports read-only users, blocked storage and invalid stored values", asyn
   await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
   await setTheme(page, "light");
   await page.getByRole("link", { name: "研发助手插件", exact: true }).click();
-  await expect(page.getByRole("button", { name: "配置流程", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "编辑流程", exact: true })).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute("data-portal-theme", "light");
   await navigate(page, "prompts", "Prompts");
   await expect(page.getByRole("button", { name: "新增 Prompt", exact: true })).toHaveCount(0);
@@ -357,7 +359,7 @@ test("keeps the original cover dark under a saved light theme", async ({ page })
   await expect(page.getByRole("button", { name: "Start" })).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".portal-theme-toggle")).toBeHidden();
   await page.getByRole("button", { name: "Start" }).click();
-  await expect(page).toHaveURL(`${portal.baseUrl}/#/hub`);
+  await expect(page).toHaveURL(`${portal.baseUrl}/#/club`);
   await expect(page.getByRole("button", { name: "切换为深色" })).toBeVisible();
 });
 
@@ -439,7 +441,7 @@ test(`renders measurable static glass depth without moving foreground content in
   const depthStyles = await optics.evaluate((node) => ({
     opticsShadow: getComputedStyle(node).boxShadow,
     opticsBackground: getComputedStyle(node).backgroundImage,
-    capsuleShadow: getComputedStyle(node.closest(".portal-capsule")!).boxShadow,
+    capsuleShadow: getComputedStyle(node.closest(".portal-capsule")!, "::after").boxShadow,
   }));
   const fogStyles = await fog.evaluate((node) => ({
     backdropFilter: getComputedStyle(node).backdropFilter,

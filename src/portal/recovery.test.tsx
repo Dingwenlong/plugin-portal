@@ -289,7 +289,8 @@ describe("import confirmation recovery", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.change(input, { target: { files: [file] } });
     expect(uploadPluginArchive).toHaveBeenCalledTimes(1);
-    for (const label of ["插件 ZIP", "发布者", "公开规范相对路径", "扩展工具 JSON"]) expect(screen.getByLabelText(label)).toBeDisabled();
+    for (const label of ["插件 ZIP", "来源市场"]) expect(screen.getByLabelText(label)).toBeDisabled();
+    expect(screen.queryByLabelText("公开规范相对路径")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭" })).toBeDisabled();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(close).not.toHaveBeenCalled();

@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from plugin_portal.download_publication import DownloadPublisher, PluginReleaseAudit
+from plugin_portal.archive_audit import PortalArchiveAuditor
 from plugin_portal.server import create_server
 
 
@@ -40,6 +41,7 @@ def main() -> None:
     parser.add_argument("--archive-path", type=Path, required=True)
     parser.add_argument("--download-root", type=Path, required=True)
     parser.add_argument("--candidate-version", required=True)
+    parser.add_argument("--real-audit", action="store_true")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--read-only", action="store_true")
     mode.add_argument("--remote-management", action="store_true")
@@ -54,7 +56,7 @@ def main() -> None:
         publisher = DownloadPublisher(
             download_root=arguments.download_root,
             receipt_root=arguments.data_root / "download-publications",
-            auditor=DeterministicAuditor(arguments.candidate_version),
+            auditor=PortalArchiveAuditor() if arguments.real_audit else DeterministicAuditor(arguments.candidate_version),
             download_reader=readback,
         )
     server = create_server(

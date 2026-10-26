@@ -6,6 +6,7 @@ from typing import Any
 
 from .models import ModelValidationError, parse_plugin_key
 from .storage import PortalStore, StorageError
+from .workflow_images import ASSET_ID, INDEX, WorkflowImageStore
 
 
 class WorkflowValidationError(ValueError):
@@ -42,11 +43,25 @@ def validate_workflow(value: object, *, expected_plugin_key: str) -> dict[str, A
 
 
 def _validate_steps(steps: list[object], all_ids: set[str]) -> None:
-    by_id: dict[str, dict[str, Any]] = {}
     for raw_step in steps:
-        _require_closed(raw_step, {"id", "label", "title", "description", "next"}, "流程步骤")
+        fields = {"id", "label", "title", "description", "next"}
+        _require_closed(raw_step, fields | ({"images"} if isinstance(raw_step, dict) and "images" in raw_step else set()), "流程步骤")
         step = raw_step
-        step_id = _register_id(step["id"], all_ids, "流程步骤 ID")
+        images = step.get("images", [])
+        if not isinstance(images, list) or len(images) > 6:
+            raise WorkflowValidationError("每个步骤最多 6 张图片")
+        seen_images = set()
+        for image in images:
+            _require_closed(image, {"assetId", "alt"} | ({"title"} if isinstance(image, dict) and "title" in image else set()), "步骤图片")
+            if "title" in image and (not isinstance(image["title"], str) or len(image["title"]) > 200
+                    or any(char in image["title"] for char in ("\x00", "\r", "\n"))):
+                raise WorkflowValidationError("子步骤标题无效")
+            if (not isinstance(image["assetId"], str) or not ASSET_ID.fullmatch(image["assetId"])
+                    or image["assetId"] in seen_images or not isinstance(image["alt"], str)
+                    or len(image["alt"]) > 200 or "\x00" in image["alt"]):
+                raise WorkflowValidationError("步骤图片引用或说明无效")
+            seen_images.add(image["assetId"])
+        _register_id(step["id"], all_ids, "流程步骤 ID")
         _require_text(step["label"], "流程步骤角标", maximum=80, single_line=True)
         _require_text(step["title"], "流程步骤标题", maximum=200, single_line=True)
         if not isinstance(step["description"], str) or len(step["description"]) > 2_000 or "\x00" in step["description"]:
@@ -55,37 +70,9 @@ def _validate_steps(steps: list[object], all_ids: set[str]) -> None:
             raise WorkflowValidationError("流程步骤 next 必须是 ID 列表")
         if len(set(step["next"])) != len(step["next"]):
             raise WorkflowValidationError("流程步骤 next 重复")
-        by_id[step_id] = step
 
-    if not by_id:
-        return
-    incoming = {step_id: 0 for step_id in by_id}
-    for item in by_id.values():
-        for next_id in item["next"]:
-            if next_id not in by_id:
-                raise WorkflowValidationError("流程包含未知连接")
-            incoming[next_id] += 1
-    entries = [step_id for step_id, count in incoming.items() if count == 0]
-    if len(entries) != 1:
-        raise WorkflowValidationError("流程必须有且只有一个入口")
-
-    visited: set[str] = set()
-    visiting: set[str] = set()
-
-    def visit(step_id: str) -> None:
-        if step_id in visiting:
-            raise WorkflowValidationError("流程不能包含循环")
-        if step_id in visited:
-            return
-        visiting.add(step_id)
-        for next_id in by_id[step_id]["next"]:
-            visit(next_id)
-        visiting.remove(step_id)
-        visited.add(step_id)
-
-    visit(entries[0])
-    if visited != set(by_id):
-        raise WorkflowValidationError("流程包含无法到达的步骤")
+    # The ordered steps array is authoritative. Legacy next links remain readable
+    # for compatibility, but are no longer editable or used to validate ordering.
 
 
 class WorkflowRepository:
@@ -102,10 +89,22 @@ class WorkflowRepository:
 
     def save(self, plugin_key: str, value: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
         validate_workflow(value, expected_plugin_key=plugin_key)
-        current = self.store.read_document("workflows")
-        plugins = deepcopy(_stored_plugins(current["data"]))
-        plugins[plugin_key] = deepcopy(value)
-        written = self.store.write_document("workflows", {"plugins": plugins}, expected_revision)
+        with self.store._lock:
+            current = self.store.read_document("workflows")
+            plugins = deepcopy(_stored_plugins(current["data"]))
+            plugins[plugin_key] = deepcopy(value)
+            images = WorkflowImageStore(self.store)
+            images.cleanup()
+            assets, asset_revision = images.prepare_save(plugins, plugin_key)
+            if self.store.read_document(INDEX)["data"] == assets:
+                # Text edits and reordering do not change image ownership. Avoid a
+                # second durable write while retaining all image validation above.
+                written = self.store.write_document("workflows", {"plugins": plugins}, expected_revision)
+            else:
+                written = self.store.write_documents_batch({
+                    "workflows": ({"plugins": plugins}, expected_revision),
+                    INDEX: (assets, asset_revision),
+                })["workflows"]
         return {"revision": written["revision"], **deepcopy(value)}
 
 

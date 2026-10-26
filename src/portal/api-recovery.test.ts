@@ -46,13 +46,15 @@ describe("PortalClient recovery contracts", () => {
     expect(inner?.aborted).toBe(true);
   });
 
-  it.each(["prompts", "workflows", "promote", "rollback", "publication"] as const)("classifies malformed successful %s receipts as uncertain", async (operation) => {
+  it.each(["prompts", "workflows", "promote", "rollback", "publication", "remove", "order"] as const)("classifies malformed successful %s receipts as uncertain", async (operation) => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => Response.json(String(input) === "/api/session" ? { token: "session" } : {}));
     const client = new PortalClient(fetcher);
     const invoke = {
       prompts: () => client.savePrompts(key, 7, items), workflows: () => client.saveWorkflows(key, 7, workflow),
       promote: () => client.promote(key, "candidate", 7), rollback: () => client.rollback(key, 7),
       publication: () => client.confirmDownloadPublication(key, "publication"),
+      remove: () => client.removePlugin(key, 7),
+      order: () => client.reorderPlugins(["sample"], 7),
     }[operation];
     await expect(invoke()).rejects.toMatchObject({ code: "invalid_response", uncertain: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -111,7 +113,8 @@ describe("PortalClient recovery contracts", () => {
     expect(sessions).toBe(1);
   });
 
-  it.each(["session", "network"])("never automatically replays promote after a %s failure", async (failure) => {
+  it.each(["session", "network"])("never automatically replays promote or remove after a %s failure", async (failure) => {
+    for (const operation of ["promote", "remove"] as const) {
     let writes = 0;
     let sessions = 0;
     const client = new PortalClient(async (input) => {
@@ -120,9 +123,10 @@ describe("PortalClient recovery contracts", () => {
       if (failure === "session") return invalidSession();
       throw new TypeError("connection lost");
     });
-    await expect(client.promote(key, "candidate", 7)).rejects.toMatchObject({ code: failure === "session" ? "invalid_session" : "network_error" });
+    await expect(operation === "promote" ? client.promote(key, "candidate", 7) : client.removePlugin(key, 7)).rejects.toMatchObject({ code: failure === "session" ? "invalid_session" : "network_error" });
     expect(writes).toBe(1);
     expect(sessions).toBe(1);
+    }
   });
 
   it.each([

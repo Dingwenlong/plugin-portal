@@ -1,0 +1,18 @@
+.import-rule-picker { display: grid; gap: 12px; min-width: 0; }
+.import-rule-picker h3, .import-rule-picker p { margin: 0; }
+.import-rule-picker p, .import-rule-picker small { color: var(--muted); }
+.import-rule-picker > input { width: 100%; }
+.import-rule-list { display: grid; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; gap: 6px; }
+.import-rule-choice { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 8px; background: var(--surface); }
+.edit-form .import-rule-label { display: flex; flex: 1; align-items: flex-start; gap: 10px; min-width: 0; cursor: pointer; }
+.edit-form .import-rule-label input { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; }
+.import-rule-label > span { display: grid; gap: 5px; overflow-wrap: anywhere; min-width: 0; }
+.import-rule-label strong { color: var(--text); font-weight: 500; }
+.import-rule-label small { font-size: 12px; line-height: 1.5; }
+.import-rule-choice > button { flex-shrink: 0; }
+.import-rule-body { min-width: 0; padding: 12px; background: var(--surface); border-radius: 8px; }
+.import-rule-body > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.import-rule-body h4 { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.import-rule-body pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.7; }
+.import-selected-rules { padding-left: 20px; overflow-wrap: anywhere; }
+.advanced-import-options > p { color: var(--muted); }
