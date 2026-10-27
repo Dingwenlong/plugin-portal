@@ -263,21 +263,20 @@ describe("PortalShell", () => {
     expect(screen.queryByRole("button", { name: "新增 Prompt" })).not.toBeInTheDocument();
   });
 
-  it("keeps the original cover as the canonical root entry", async () => {
+  it.each(["", "#/", "#/club"])("shows the plugin list directly at %s", async (initialHash) => {
     const { container } = render(
       <PortalShell
         client={createClient()}
-        initialHash="#/"
+        initialHash={initialHash}
       />,
     );
 
-    await waitFor(() => expect(container.querySelector(".hub-cover")).toBeInTheDocument());
-    const start = container.querySelector("[data-cover-liquid-glass-button]");
-    expect(start).toBeDisabled();
-    expect(start).toHaveAttribute("aria-hidden", "true");
-    expect(start).toHaveTextContent("");
+    expect(await screen.findByRole("link", { name: "研发助手插件" })).toHaveAttribute(
+      "href", "#/plugins/company-dev%2Fproject-delivery-hub/overview",
+    );
+    expect(container.querySelector(".hub-cover")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "纳入插件" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "纳入插件" })).toBeInTheDocument();
   });
 
   it("adds plugin inclusion only to the original Hub page", async () => {

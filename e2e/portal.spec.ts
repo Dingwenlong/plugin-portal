@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-import { installMockWebGpu } from "./mockWebGpu";
 import { startTestPortal, type TestPortal } from "./testServer";
 
 // Keep classic scrollbars visible so long/short page changes exercise their layout space.
@@ -17,57 +16,19 @@ test.describe.serial("Plugin Portal", () => {
     await portal?.stop();
   });
 
-  test.beforeEach(async ({ page }) => {
-    await installMockWebGpu(page);
-  });
-
-  test("keeps the original cover and opens plugin inclusion from the Hub", async ({ page }) => {
+  test("opens plugin inclusion directly from the home page", async ({ page }) => {
     await page.setViewportSize({ width: 1912, height: 948 });
     const remoteRequests: string[] = [];
     page.on("request", (request) => {
       if (!request.url().startsWith(portal.baseUrl)) remoteRequests.push(request.url());
     });
     await page.goto(`${portal.baseUrl}/#/`);
-    await expect(page.locator(".hub-cover")).toBeVisible();
-    await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
-    const startButton = page.getByRole("button", { name: "Start" });
-    await expect(startButton).toBeVisible();
-    await expect(startButton).toBeEnabled();
-    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCount(0);
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "ready");
-    await expect.poll(async () => page.locator("[data-cover-accretion-canvas]").getAttribute("data-rendered-frame")).not.toBe("0");
-    await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
-    // Bound the Liquid Orb first frame separately from the unchanged click-to-Hub gate.
-    await expect.poll(async () => page.locator("[data-cover-liquid-glass-canvas]").getAttribute("data-rendered-frame"), { timeout: 12_000 }).not.toBe("0");
-    await expect(page.locator("[data-cover-liquid-glass-canvas]")).toHaveAttribute("data-orb-style", "particleRibbon");
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("width", 1912);
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveJSProperty("height", 948);
-    await expect(page.getByRole("button", { name: "纳入插件" })).toHaveCount(0);
-
-    await page.evaluate(() => {
-      const root = document.querySelector("[data-hub-entry-phase]")!;
-      const measurement = { clickedAt: 0, completedAt: 0 };
-      Object.assign(window, { portalCoverMeasurement: measurement });
-      document.querySelector("[data-cover-liquid-glass-button]")!.addEventListener("click", () => {
-        measurement.clickedAt = performance.now();
-      }, { once: true });
-      new MutationObserver(() => {
-        if (root.getAttribute("data-hub-entry-phase") === "hub") {
-          measurement.completedAt = performance.now();
-        }
-      }).observe(root, { attributes: true, attributeFilter: ["data-hub-entry-phase"] });
-    });
-    await startButton.click();
-    await expect(page).toHaveURL(`${portal.baseUrl}/#/club`);
-    await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/`);
+    await expect(page.getByRole("heading", { name: "Plugin Family" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "纳入插件" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start" })).toHaveCount(0);
+    await expect(page.locator(".hub-cover, canvas")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^管理 / })).toHaveCount(0);
-    const transition = await page.evaluate(() => (window as unknown as {
-      portalCoverMeasurement: { clickedAt: number; completedAt: number };
-    }).portalCoverMeasurement);
-    expect(transition.clickedAt).toBeGreaterThan(0);
-    expect(transition.completedAt - transition.clickedAt).toBeGreaterThan(0);
-    expect(transition.completedAt - transition.clickedAt).toBeLessThan(3_000);
     await page.getByRole("button", { name: "纳入插件" }).click();
     await expect(page.getByRole("dialog", { name: "纳入插件" })).toBeVisible();
     await expect(page.getByLabel("插件目录")).toHaveAttribute("readonly", "");
@@ -105,7 +66,7 @@ test.describe.serial("Plugin Portal", () => {
     expect(remoteRequests).toEqual([]);
   });
 
-  test("keeps Start usable when WebGL uses the static fallback", async ({ page }) => {
+  test("keeps the home page usable without WebGL", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.addInitScript(() => {
       const getContext = HTMLCanvasElement.prototype.getContext;
@@ -117,10 +78,13 @@ test.describe.serial("Plugin Portal", () => {
 
     await page.goto(`${portal.baseUrl}/#/`);
 
-    await expect(page.locator("[data-cover-accretion-canvas]")).toHaveAttribute("data-render-state", "fallback");
-    await expect(page.locator("[data-cover-loading-overlay]")).toHaveCount(0);
-    await expect(page.locator("[data-cover-loading-status]")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Start" })).toBeEnabled();
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/`);
+    await expect(page.getByRole("link", { name: "研发助手插件" })).toBeVisible();
+    await expect(page.locator(".hub-cover, canvas")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Start" })).toHaveCount(0);
+    await page.goto(`${portal.baseUrl}/#/club`);
+    await expect(page.getByRole("link", { name: "研发助手插件" })).toBeVisible();
+    await expect(page).toHaveURL(`${portal.baseUrl}/#/club`);
   });
 
   test("keeps the duplicate publication action out of the Hub", async ({ page }) => {

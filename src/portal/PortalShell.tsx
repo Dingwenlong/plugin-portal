@@ -139,7 +139,7 @@ function PortalShellContent({
   const isPluginLocation = /^#\/plugins\//.test(sourceHash);
   const hubRoute: HubRoute | undefined = isPluginLocation
     ? undefined
-    : sourceHash === "#/club" || sourceHash === "#/hub" ? "hub" : "cover";
+    : "hub";
   const route = parsePortalRoute(sourceHash, catalog.items);
   const page = route.page;
 
